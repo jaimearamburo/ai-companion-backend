@@ -1,18 +1,27 @@
 # CI gate: every push and pull request must pass lint, format check, type check and tests.
 name: CI
 
+# Skipped when a push/PR only changes documentation or the license — those can't
+# break lint, types or tests. Any change touching another file runs the full checks.
 on:
   push:
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "LICENSE"
 
 jobs:
   checks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Installs uv, which then installs the Python version pinned in .python-version.
-      - uses: astral-sh/setup-uv@v6
+      # setup-uv publishes exact version tags only (no floating "v10"), so it's pinned exactly.
+      - uses: astral-sh/setup-uv@v10.2.0
 
       # --locked fails the build if uv.lock is out of date with pyproject.toml.
       - name: Install dependencies

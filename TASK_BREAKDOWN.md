@@ -13,8 +13,8 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 ## Phase 0 — Project Setup & Foundations
 - [x] **0.1** Create the project structure: `pyproject.toml`, `src/companion/` module packages with READMEs, `tests/`, `supabase/migrations/`, CI workflow, `.env.example`, `.gitignore`
 - [x] **0.2** Install uv; run `uv sync` to generate `uv.lock`; confirm lint, format, type check and tests all pass locally
-- [ ] **0.3** Initialise Git and make the first commit (manual)
-- [ ] **0.4** Push to GitHub; confirm the CI workflow runs green
+- [x] **0.3** Initialise Git and make the first commit (manual)
+- [x] **0.4** Push to GitHub; confirm the CI workflow runs green
 - [ ] **0.5** Create `.env` with real credentials: LiveKit Cloud (AU project), Inworld, Groq, Redis (Sydney), Supabase DB connection string
 - [x] **0.6** ~~Install the Supabase CLI and link it to the Sydney Supabase project~~ — **Not needed:** migrations are applied manually in the Supabase dashboard SQL editor
 - [ ] **0.7** `config/`: typed settings object loaded from env vars, failing fast on missing values; tests
@@ -132,4 +132,8 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 ## Misc — Unlisted Tasks
 *For tracking work that doesn't fit a phase above. Add entries as `M.n`.*
 
-- [ ] **M.1**
+- [x] **M.1** Proprietary `LICENSE` (all rights reserved) and README license section
+- [x] **M.2** Audience-neutral wording across all committed files; audience context moved to a private, git-ignored file
+- [x] **M.3** Test coverage reporting (`pytest-cov`, branch coverage, no enforced minimum)
+- [x] **M.4** Rename `session/` module to `pipeline/`; remove `py.typed`
+- [ ] **M.5** Update CI actions to Node 24 versions; skip CI for docs-only changes — awaiting commit, push and a green run
