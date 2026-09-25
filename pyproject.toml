@@ -1,0 +1,92 @@
+# Project metadata, dependencies and tool settings (the Python equivalent of package.json).
+# Runtime dependencies are added per task as each module is built, not upfront.
+
+[project]
+name = "ai-companion-backend"
+version = "0.1.0"
+description = "Real-time voice pipeline for the Voice Companion (LiveKit Agents worker)."
+readme = "README.md"
+requires-python = ">=3.13,<3.14"
+dependencies = []
+
+# Development-only tools. Installed by `uv sync`, never shipped in the deployed image.
+[dependency-groups]
+dev = [
+    "mypy",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "ruff",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Tells the build tool where the package lives (the "src layout": code under src/companion/).
+[tool.hatch.build.targets.wheel]
+packages = ["src/companion"]
+
+# ---------------------------------------------------------------------------
+# ruff: linter + formatter (replaces ESLint + Prettier)
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle: basic style errors/warnings
+    "F",        # pyflakes: unused imports, undefined names
+    "I",        # isort: import ordering
+    "B",        # bugbear: likely bugs and design problems
+    "UP",       # pyupgrade: use modern Python syntax
+    "N",        # pep8-naming: naming conventions
+    "S",        # bandit: security issues (e.g. hardcoded secrets)
+    "ASYNC",    # async-specific mistakes (e.g. blocking calls inside async code)
+    "SIM",      # simplifications
+    "RUF",      # ruff's own rules
+]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest uses plain `assert` statements; the security rule against asserts doesn't apply to tests.
+"tests/**" = ["S101"]
+
+# ---------------------------------------------------------------------------
+# mypy: static type checker (the equivalent of `tsc --noEmit` with strict mode)
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.13"
+strict = true
+mypy_path = "src"
+files = ["src", "tests"]
+
+# ---------------------------------------------------------------------------
+# pytest: test runner
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# "auto" lets async test functions run without decorating each one.
+asyncio_mode = "auto"
+# --cov measures which lines of the package ran during the tests (see [tool.coverage] below).
+addopts = "-ra --strict-markers --cov"
+
+# ---------------------------------------------------------------------------
+# coverage: which lines and branches the tests actually executed (via pytest-cov).
+# Reported on every test run; deliberately no minimum percentage — the report is
+# read to confirm behaviour-deciding code (safety, turn-taking, providers,
+# scheduling) is covered, not to chase a number.
+# ---------------------------------------------------------------------------
+[tool.coverage.run]
+source = ["companion"]
+# Branch coverage: checks both sides of every if/try ran, not just each line once.
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+# Hide fully covered files so the report only lists what still has gaps.
+skip_covered = true
+exclude_also = [
+    # Imports that only exist for the type checker never run at runtime.
+    "if TYPE_CHECKING:",
+]
