@@ -7,7 +7,10 @@ version = "0.1.0"
 description = "Real-time voice pipeline for the Voice Companion (LiveKit Agents worker)."
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.15.0",
+    "structlog>=26.1.0",
+]
 
 # Development-only tools. Installed by `uv sync`, never shipped in the deployed image.
 [dependency-groups]
@@ -60,6 +63,14 @@ python_version = "3.13"
 strict = true
 mypy_path = "src"
 files = ["src", "tests"]
+# Teaches mypy how pydantic models build their constructors (e.g. that settings
+# classes can be created without arguments because values come from env vars).
+plugins = ["pydantic.mypy"]
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+warn_required_dynamic_aliases = true
 
 # ---------------------------------------------------------------------------
 # pytest: test runner

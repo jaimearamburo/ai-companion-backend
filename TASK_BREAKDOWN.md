@@ -17,8 +17,8 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [x] **0.4** Push to GitHub; confirm the CI workflow runs green
 - [ ] **0.5** Create `.env` with real credentials: LiveKit Cloud (AU project), Inworld, Groq, Redis (Sydney), Supabase DB connection string
 - [x] **0.6** ~~Install the Supabase CLI and link it to the Sydney Supabase project~~ — **Not needed:** migrations are applied manually in the Supabase dashboard SQL editor
-- [ ] **0.7** `config/`: typed settings object loaded from env vars, failing fast on missing values; tests
-- [ ] **0.8** `observability/`: structured JSON logging with session/turn/preset context; tests
+- [x] **0.7** `config/`: typed settings object loaded from env vars, failing fast on missing values; tests
+- [x] **0.8** `observability/`: structured JSON logging with session/turn/preset context; tests (per-turn metrics come with the features that produce them)
 
 ## Phase 1 — Database Schema
 *(Schema changes go into ARCHITECTURE.md's Database schema section first, then become a migration file here. Each migration file is transaction-wrapped and applied **manually** by pasting it into the Supabase dashboard SQL editor, in file order. After each applied migration, the frontend must regenerate Supabase types.)*
