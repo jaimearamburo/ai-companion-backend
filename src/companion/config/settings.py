@@ -8,10 +8,11 @@ servers have no ``.env``; their values come from a secrets manager.
 Required settings are the ones every call needs. If any is missing or malformed,
 ``load_settings`` raises ``ConfigurationError`` naming the offending variables, so
 the worker refuses to start instead of failing halfway through a call. Keys that
-only some provider presets use (e.g. ``DEEPGRAM_API_KEY``) are optional here; the
+only some provider presets use (e.g. ``INWORLD_API_KEY``) are optional here; the
 provider registry checks them when a call selects a preset that needs them.
 """
 
+import re
 from enum import StrEnum
 from pathlib import Path
 from typing import Self
@@ -84,14 +85,18 @@ class Settings(BaseSettings):
     livekit_url: str
     livekit_api_key: SecretStr
     livekit_api_secret: SecretStr
-    inworld_api_key: SecretStr
+    deepgram_api_key: SecretStr
+    # The LLMs (scriptwriter and safety) can run on Groq or on Amazon Bedrock;
+    # both are configured so either can be selected per call.
     groq_api_key: SecretStr
+    bedrock_api_key: SecretStr
+    bedrock_region: str
     # Connection URLs usually embed a password, so they're treated as secrets too.
     redis_url: SecretStr
     supabase_db_url: SecretStr
 
     # --- Optional: only needed by some provider presets ----------------------
-    deepgram_api_key: SecretStr | None = None
+    inworld_api_key: SecretStr | None = None
 
     # "before" validators run on the raw text from the environment, before
     # pydantic converts it to the field's type — here, so any casing is
@@ -111,6 +116,14 @@ class Settings(BaseSettings):
     def _check_livekit_url(cls, value: str) -> str:
         if not value.startswith(("wss://", "ws://")):
             raise ValueError("must be a WebSocket URL starting with wss:// or ws://")
+        return value
+
+    @field_validator("bedrock_region")
+    @classmethod
+    def _check_bedrock_region(cls, value: str) -> str:
+        # AWS region codes look like "ap-southeast-2": letters, dashes, a final digit.
+        if not re.fullmatch(r"[a-z]{2}(-[a-z]+)+-\d", value):
+            raise ValueError("must be an AWS region code such as ap-southeast-2")
         return value
 
     @field_validator("redis_url")

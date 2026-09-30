@@ -24,8 +24,10 @@ jobs:
       - uses: astral-sh/setup-uv@v10.2.0
 
       # --locked fails the build if uv.lock is out of date with pyproject.toml.
+      # --all-groups also installs the experiments group, so experiment scripts
+      # are type-checked in CI too (they never ship with the application).
       - name: Install dependencies
-        run: uv sync --locked
+        run: uv sync --locked --all-groups
 
       - name: Lint
         run: uv run ruff check .

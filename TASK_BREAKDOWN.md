@@ -1,6 +1,6 @@
 # Voice Companion Backend — Task Breakdown
 
-**Stack:** Python 3.13, LiveKit Agents (self-hosted, AWS Sydney), Inworld STT/TTS, Groq (GPT-OSS-20B scriptwriter, Safeguard-20B safety), Redis, Supabase Postgres + pgvector (Sydney), self-hosted embedding model. Full spec: [ARCHITECTURE.md](ARCHITECTURE.md).
+**Stack:** Python 3.13, LiveKit Agents (self-hosted, AWS Sydney), Deepgram STT (Sydney), GPT-OSS-120B scriptwriter + Safeguard-20B safety (Groq or Bedrock Sydney), Fish S2 Pro TTS (self-hosted, Modal Australia), Redis (Upstash Sydney), Supabase Postgres + pgvector (Sydney), self-hosted embedding model. Full spec: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Tasks are grouped into phases and roughly ordered by dependency. Each subtask is numbered `phase.subtask` (e.g. `6.3`) as a local reference ID for this document only. Tasks marked **(frontend)** need a matching change in the frontend repo — relay those across. Tasks marked **(decision)** need your call before work starts.
 
@@ -15,7 +15,7 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [x] **0.2** Install uv; run `uv sync` to generate `uv.lock`; confirm lint, format, type check and tests all pass locally
 - [x] **0.3** Initialise Git and make the first commit (manual)
 - [x] **0.4** Push to GitHub; confirm the CI workflow runs green
-- [ ] **0.5** Create `.env` with real credentials: LiveKit Cloud (AU project), Inworld, Groq, Redis (Sydney), Supabase DB connection string
+- [x] **0.5** Create `.env` with real credentials: LiveKit Cloud, Deepgram, Groq, Bedrock (Sydney), Redis (Upstash Sydney), Supabase DB connection string
 - [x] **0.6** ~~Install the Supabase CLI and link it to the Sydney Supabase project~~ — **Not needed:** migrations are applied manually in the Supabase dashboard SQL editor
 - [x] **0.7** `config/`: typed settings object loaded from env vars, failing fast on missing values; tests
 - [x] **0.8** `observability/`: structured JSON logging with session/turn/preset context; tests (per-turn metrics come with the features that produce them)
@@ -34,7 +34,7 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 
 ## Phase 2 — Multi-bot Routing Prototype (de-risking spike)
 *(Throwaway prototype code, kept outside `src/`. Answers whether one `AgentSession` can drive per-bot tracks before the real pipeline is built on that assumption.)*
-- [ ] **2.1** Minimal worker joins a LiveKit Cloud room and speaks a fixed line through Inworld TTS
+- [ ] **2.1** Minimal worker joins a LiveKit Cloud room and speaks a fixed line through the TTS preset
 - [ ] **2.2** Verify an audio frame's `userdata` tag survives from the TTS step to a custom audio output
 - [ ] **2.3** Custom audio output publishes one track per bot (`bot:<bot_id>`), two voices
 - [ ] **2.4** Barge-in: user speaking stops all bot tracks
@@ -45,7 +45,7 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [ ] **3.1** `dispatch/`: typed dispatch-metadata model and validation; tests
 - [ ] **3.2** Bot-count check against the user's role (max 2 for regular users); tests
 - [ ] **3.3** `providers/`: registry mapping preset names to STT, TTS and LLM instances; tests
-- [ ] **3.4** Turn-detector presets (`livekit_v1`, `livekit_v1_mini`, `stt_native`)
+- [ ] **3.4** Turn-detector presets (`livekit_v1_mini`, `stt_native`)
 - [ ] **3.5** Compatibility rules and `auto` speculative-trigger resolution; tests
 - [ ] **3.6** **(frontend)** Confirm the final preset list and dispatch-metadata shape; update ARCHITECTURE.md → Frontend contract
 
@@ -65,14 +65,14 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [ ] **5.5** Tests covering timeouts, garbage responses and slow verdicts
 
 ## Phase 6 — Turn-taking & Speculative Bets
-- [ ] **6.1** Measure Inworld STT from Sydney: round-trip latency and interim-result cadence (vs Deepgram Nova-3 / Flux) — decides whether Inworld stays
+- [ ] **6.1** Measure Deepgram STT from Sydney: interim/preflight transcript cadence (Nova-3 vs Flux)
 - [ ] **6.2** Bet manager: one bet in flight, cancel on text change (including stopping the Groq stream), cap 3 per turn + 10s cut-off
 - [ ] **6.3** `transcript_rules` strategy with per-language word rules (English, Mandarin, Spanish); tests
 - [ ] **6.4** `transcript_debounce_only` and `vad_silence` strategies; tests
 - [ ] **6.5** `livekit_preemptive` integration
 - [ ] **6.6** "Commit wins the race" path: commit triggers generation when no bet is usable
 - [ ] **6.7** Per-turn metrics: bets fired/wasted, bet-to-commit time
-- [ ] **6.8** Compare turn detectors from Sydney: `livekit_v1` vs `livekit_v1_mini` vs `stt_native`; confirm v1 pricing for self-hosted agents
+- [ ] **6.8** Compare turn detectors: `livekit_v1_mini` vs `stt_native` (Deepgram Flux); check whether v1 is usable in local development
 - [ ] **6.9** Tune debounce window and endpointing delays on real users' speech
 
 ## Phase 7 — Memory: Reading During a Call
@@ -119,6 +119,7 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [ ] **11.3** Secrets in AWS Secrets Manager
 - [ ] **11.4** ECS service in ap-southeast-2: minimum warm workers, autoscaling, rolling deploys that don't cut live calls
 - [ ] **11.5** Move Supabase to a paid tier before real users use it
+- [ ] **11.8** **(decision)** Upgrade LiveKit Cloud to a plan with region pinning (Ship, \~$50/month) before real users use it; weigh `aus` being a single location
 - [ ] **11.6** Add a Deployment section to ARCHITECTURE.md
 - [ ] **11.7** Privacy review by an Australian privacy lawyer (health data, emotional triggers, indefinite transcripts) before launch
 
@@ -136,4 +137,9 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [x] **M.2** Audience-neutral wording across all committed files; audience context moved to a private, git-ignored file
 - [x] **M.3** Test coverage reporting (`pytest-cov`, branch coverage, no enforced minimum)
 - [x] **M.4** Rename `session/` module to `pipeline/`; remove `py.typed`
-- [ ] **M.5** Update CI actions to Node 24 versions; skip CI for docs-only changes — awaiting commit, push and a green run
+- [x] **M.5** Update CI actions to Node 24 versions; skip CI for docs-only changes
+- [x] **M.6** Vendor research and decisions for an all-in-Australia stack (STT, LLM hosts, TTS, turn detection); recorded in ARCHITECTURE.md
+- [x] **M.7** Settings: Deepgram, Groq, Bedrock required; Inworld optional
+- [x] **M.8** Latency probe (`experiments/latency_probe/`): measure LLM hosts (Groq vs Bedrock Sydney), Deepgram, Redis, Supabase from Australia; commit results
+- [ ] **M.9** Self-host Fish S2 Pro on Modal's Australian region (streaming endpoint, scale-to-zero); add to the latency probe
+- [ ] **M.10** Voice listening test: Fish S2 Pro vs production candidates (Azure Australia East, Qwen3-TTS, Orpheus) using the same script lines

@@ -21,6 +21,13 @@ dev = [
     "pytest-cov",
     "ruff",
 ]
+experiments = [
+    "httpx>=0.28.1",
+    "modal>=1.6.0",
+    "openai>=3.20.0",
+    "psycopg[binary]>=3.3.6",
+    "redis>=8.1.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -62,7 +69,7 @@ select = [
 python_version = "3.13"
 strict = true
 mypy_path = "src"
-files = ["src", "tests"]
+files = ["src", "tests", "experiments"]
 # Teaches mypy how pydantic models build their constructors (e.g. that settings
 # classes can be created without arguments because values come from env vars).
 plugins = ["pydantic.mypy"]

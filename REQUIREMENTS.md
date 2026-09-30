@@ -13,16 +13,17 @@ A real-time voice companion app: one user talking with 1 or 2 AI bot companions.
 Target: sub-300–400ms time-to-first-audible-response, sub-3¢/min cost, everything Sydney-pinned. Full stack, cost model, sequence diagrams, and the reasoning behind every pick are in `ARCHITECTURE.md` — don't re-derive decisions that are already made and justified there; if you think one is wrong, say so and stop, don't silently change it.
  
 Current stack summary (ARCHITECTURE.md is authoritative if this drifts):
-- Transport/VAD: LiveKit Cloud, Australia-pinned
+- Transport/VAD: LiveKit Cloud, Australia region (pinning requires a paid plan — see ARCHITECTURE.md Engineering flags)
 - Orchestration: self-hosted LiveKit Agents, Python, AWS ap-southeast-2 (Sydney) — **this repo**
-- STT: Inworld (`inworld-stt-1`) — **provisional, being tested against Deepgram Nova-3**
-- Turn detection: LiveKit Turn Detector v1 (default), selectable per call; speculative-bet trigger also selectable per call
-- Safety: GPT-OSS-Safeguard-20B on Groq, parallel to the speculative scriptwriter draft; fails closed
+- In-region target: every hot-path component runs in Australia
+- STT: Deepgram Nova-3 on the Australian endpoint
+- Turn detection: LiveKit Turn Detector v1-mini on the agent (v1 is only for LiveKit-hosted agents), selectable per call; speculative-bet trigger also selectable per call
+- Safety: GPT-OSS-Safeguard-20B on Groq or Amazon Bedrock Sydney (host chosen by measurement), parallel to the speculative scriptwriter draft; fails closed
 - Memory: profile cheat sheet preloaded into Redis at call start; Supabase Postgres+pgvector searched on demand via the scriptwriter's `recall_memory` tool; in-payload rolling buffer; post-call extraction job writes new memories
 - Embeddings: self-hosted Hugging Face model on the orchestration server (model TBD)
-- Scriptwriter LLM: GPT-OSS-20B on Groq, single pass, decides speaker + content + tags for all bots (also the "conductor" role)
+- Scriptwriter LLM: GPT-OSS-120B on Groq or Amazon Bedrock Sydney (host chosen by measurement), single pass, decides speaker + content + tags for all bots (also the "conductor" role)
 - Multi-bot output: one AgentSession, one agent participant, one audio track per bot — pending prototype
-- TTS: Inworld TTS-2 Flash
+- TTS: Fish Audio S2 Pro, self-hosted on Modal's Australian region — non-commercial licence, must be licensed or replaced before any commercial use (see ARCHITECTURE.md → Voice (TTS))
 - Frontend: Next.js/TypeScript — **other repo**, not built here
 ## Database schema — this repo owns it
  

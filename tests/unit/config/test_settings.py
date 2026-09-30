@@ -17,15 +17,17 @@ VALID_ENV = {
     "LIVEKIT_URL": "wss://example.livekit.cloud",
     "LIVEKIT_API_KEY": "lk-key",
     "LIVEKIT_API_SECRET": "lk-secret-value",
-    "INWORLD_API_KEY": "inworld-key",
+    "DEEPGRAM_API_KEY": "deepgram-key",
     "GROQ_API_KEY": "groq-key",
+    "BEDROCK_API_KEY": "bedrock-key",
+    "BEDROCK_REGION": "ap-southeast-2",
     "REDIS_URL": "rediss://default:redis-password@example.upstash.io:6379",
     "SUPABASE_DB_URL": "postgresql://postgres:db-password@example.supabase.com:5432/postgres",
 }
 
 SETTINGS_VARIABLES = [
     *VALID_ENV,
-    "DEEPGRAM_API_KEY",
+    "INWORLD_API_KEY",
     "ENVIRONMENT",
     "LOG_LEVEL",
     "LOG_FORMAT",
@@ -60,7 +62,8 @@ def test_loads_valid_settings_with_defaults(monkeypatch: pytest.MonkeyPatch) -> 
     assert settings.environment is Environment.DEVELOPMENT
     assert settings.log_level is LogLevel.INFO
     assert settings.log_format is LogFormat.AUTO
-    assert settings.deepgram_api_key is None
+    assert settings.bedrock_region == "ap-southeast-2"
+    assert settings.inworld_api_key is None
 
 
 def test_secrets_are_hidden_when_printed(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,7 +72,7 @@ def test_secrets_are_hidden_when_printed(monkeypatch: pytest.MonkeyPatch) -> Non
     settings = load_settings(env_file=None)
 
     printed = repr(settings) + str(settings)
-    for secret in ("lk-secret-value", "groq-key", "redis-password", "db-password"):
+    for secret in ("lk-secret-value", "groq-key", "bedrock-key", "redis-password", "db-password"):
         assert secret not in printed
 
 
@@ -95,9 +98,9 @@ def test_empty_value_counts_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_empty_optional_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    set_env(monkeypatch, DEEPGRAM_API_KEY="")
+    set_env(monkeypatch, INWORLD_API_KEY="")
 
-    assert load_settings(env_file=None).deepgram_api_key is None
+    assert load_settings(env_file=None).inworld_api_key is None
 
 
 @pytest.mark.parametrize(
@@ -108,6 +111,7 @@ def test_empty_optional_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
         ("SUPABASE_DB_URL", "mysql://postgres:db-password@example.com/db"),
         ("ENVIRONMENT", "staging"),
         ("LOG_LEVEL", "LOUD"),
+        ("BEDROCK_REGION", "Sydney"),
     ],
 )
 def test_invalid_values_are_rejected_without_echoing_them(
@@ -170,12 +174,12 @@ def test_reads_env_file_and_real_variables_win(
         + "\nGROQ_API_KEY=from-file\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("INWORLD_API_KEY", "from-environment")
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "from-environment")
 
     settings = load_settings(env_file=env_file)
 
     assert settings.groq_api_key.get_secret_value() == "from-file"
-    assert settings.inworld_api_key.get_secret_value() == "from-environment"
+    assert settings.deepgram_api_key.get_secret_value() == "from-environment"
 
 
 def test_missing_env_file_is_fine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
