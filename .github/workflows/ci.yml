@@ -40,3 +40,33 @@ jobs:
 
       - name: Tests
         run: uv run pytest
+
+  # Applies every database migration, in order, to a throwaway Postgres and runs
+  # the schema checks — so a broken migration fails here instead of in the real
+  # Supabase database (where migrations are applied by hand).
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        # Postgres 17 with the pgvector extension (needed by the memory tables).
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Wait until the database accepts connections before running steps.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Apply migrations and run schema checks
+        run: bash supabase/ci/apply_migrations.sh

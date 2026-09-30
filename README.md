@@ -30,7 +30,7 @@ src/companion/        the application package
 └── observability/    structured logging, per-turn metrics
 tests/unit/           mirrors src/companion/
 tests/integration/    pipeline tests against recorded vendor responses
-supabase/migrations/  the database schema — single source of truth for both repos
+supabase/             the database schema (migrations/) and its CI checks (ci/) — single source of truth for both repos
 ```
 
 ## Local development

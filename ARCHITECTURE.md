@@ -252,15 +252,15 @@ CREATE TYPE user_role AS ENUM ('admin', 'user');
 CREATE TABLE users (
     id             uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     name           text,                          -- nullable: not every OAuth profile provides one
-    email          text        NOT NULL,
+    email          text        NOT NULL UNIQUE,   -- always stored lowercase (CHECK below)
     email_verified timestamptz,                   -- set by Auth.js for OAuth sign-ins
     image          text,
     password_hash  text,                          -- null for Google-only accounts
     role           user_role   NOT NULL DEFAULT 'user',  -- admin: unlimited bots per call (testing)
     created_at     timestamptz NOT NULL DEFAULT now(),
-    updated_at     timestamptz NOT NULL DEFAULT now()    -- maintained by a trigger
+    updated_at     timestamptz NOT NULL DEFAULT now(),   -- maintained by a trigger
+    CHECK (email = lower(email))
 );
-CREATE UNIQUE INDEX users_email_key ON users (lower(email));
 
 -- One row per OAuth provider login linked to a user (e.g. their Google account).
 -- Token columns mirror the OAuth fields Auth.js passes through.
@@ -286,7 +286,9 @@ CREATE INDEX accounts_user_id_idx ON accounts (user_id);
 - **No `verification_tokens` table** — only needed for email verification or magic-link sign-in; add it with that feature.
 - `user_id` is always the end user (the person talking to the bots); every other table's `user_id` references `users (id)`.
 
-**RLS is mandatory:** Supabase exposes `public` tables through its API, so every table — especially `users` with `password_hash` — has RLS enabled. With Auth.js (not Supabase Auth), Supabase's `auth.uid()` doesn't work out of the box; until user-facing policies are designed, tables are accessed only server-side (frontend with the service-role key, backend over a direct Postgres connection) and RLS denies everything else.
+**Email case:** emails are stored **lowercase only** — a CHECK constraint rejects anything else, so uniqueness is a plain `UNIQUE` and lookups are simple equality from `supabase-js`. The frontend's Auth.js adapter lowercases emails before every insert and lookup; forgetting to fails loudly (constraint error) rather than creating a duplicate account.
+
+**RLS is mandatory:** Supabase exposes `public` tables through its API, so every table — especially `users` with `password_hash` — has RLS enabled. With Auth.js (not Supabase Auth), Supabase's `auth.uid()` doesn't work out of the box; until user-facing policies are designed, tables are accessed only server-side (frontend with the service-role key, backend over a direct Postgres connection) and RLS denies everything else. Migrations also revoke the default table privileges Supabase grants to its `anon` and `authenticated` API roles, so the browser-facing roles have no access even if a policy is added by mistake.
 
 ### Draft — memory tables (not yet a migration)
 

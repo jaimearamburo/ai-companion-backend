@@ -23,7 +23,7 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 ## Phase 1 — Database Schema
 *(Schema changes go into ARCHITECTURE.md's Database schema section first, then become a migration file here. Each migration file is transaction-wrapped and applied **manually** by pasting it into the Supabase dashboard SQL editor, in file order. After each applied migration, the frontend must regenerate Supabase types.)*
 - [x] **1.1** ~~Choose the Auth.js database adapter~~ — **Decided:** custom adapter in the frontend on `supabase-js`, snake_case tables, no ORM (see ARCHITECTURE.md → Database schema → Auth tables)
-- [ ] **1.2** `users` + `accounts` migration from the ARCHITECTURE.md draft (including the `updated_at` trigger and RLS) — once applied, tell the frontend so it can regenerate types and build its Auth.js adapter
+- [x] **1.2** `users` + `accounts` migration from the ARCHITECTURE.md draft (including the `updated_at` trigger and RLS) — once applied, tell the frontend so it can regenerate types and build its Auth.js adapter
 - [ ] **1.3** Design and document `bots` (roster), `sessions` (calls: bots present, presets used, start/end), `messages` (transcripts, heard text per speaker)
 - [ ] **1.4** `memories` + `memory_witnesses` migration (hash-partitioned by user, `halfvec`), per the draft in ARCHITECTURE.md
 - [ ] **1.5** RLS: enable on every table; define policies (memories and transcripts are backend-only)
@@ -146,4 +146,5 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [ ] **M.10** Voice listening test: pick the bots' Fish voices (and compare against alternatives if wanted) using the same script lines
 - [x] **M.11** Decide LLM and TTS hosts from measurements: Groq (Sydney) + Bedrock fallback, GPT-OSS-120B; Fish hosted S2.1; findings in ARCHITECTURE.md and `experiments/latency_probe/RESULTS.md`
 - [x] **M.12** `FISH_API_KEY` setting; Fish TTS rows in the latency probe
-- [ ] **M.13** Measure Fish S2.1 first audio over the WebSocket API and on the paid model (needs Fish account credit)
+- [ ] **M.13** (later) Measure Fish S2.1 first audio over the WebSocket API and on the paid model — extra TTS latency accepted for now; revisit with paid tiers if needed
+- [x] **M.14** CI job applying all migrations to a throwaway Postgres 17 (pgvector) plus behavioural schema checks (`supabase/ci/`)

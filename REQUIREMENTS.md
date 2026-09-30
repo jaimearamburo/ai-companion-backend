@@ -32,7 +32,7 @@ Per `ARCHITECTURE.md`'s "Database schema" section: the actual Supabase Postgres 
 We use standard Python PostgreSQL tools to read our tables and vectors.
  
 Concretely:
-- `supabase/migrations/` here is the single source of truth. Never apply a schema change from anywhere else.
+- `supabase/migrations/` here is the single source of truth. Never apply a schema change from anywhere else. Migrations are applied manually in the Supabase SQL editor; CI first applies them all to a throwaway Postgres and runs behavioural checks (`supabase/ci/`) — see `supabase/README.md`.
 - After any schema change, regenerate and note that the frontend needs `supabase gen types typescript` re-run on its side — tell me explicitly when this happens so I can pass it along, since I can't push that update into the frontend repo myself.
 - If a frontend need surfaces a table/column that doesn't exist yet (I'll relay this from the other repo's Claude Code session, or the developer will tell you directly), draft the migration here — don't assume the shape, ask if it's not obvious from `ARCHITECTURE.md`.
 - The memory tables have a draft in `ARCHITECTURE.md`'s Database schema section; the rest (users, bots, sessions, messages, RLS policies) isn't designed yet. Schema changes go into that section first, then become a migration here.
