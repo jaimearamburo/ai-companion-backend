@@ -9,6 +9,8 @@ What it measures (each several times, reporting min / median / max):
      (safety), on Groq and on Amazon Bedrock (Sydney): both the first token of any kind
      (including the model's brief internal reasoning) and the first visible text.
   3. Deepgram STT request time on the Australian endpoint vs the global one.
+  3b. Fish Audio TTS time to first audio (hosted S2.1, free model), which shows the
+     real cost of Fish serving from outside Australia.
   4. Redis (Upstash) PING and Postgres (Supabase) ``SELECT 1`` round trips over an
      already-open connection, plus the one-off connection setup time.
 
@@ -48,6 +50,12 @@ SAFETY_SYSTEM = (
     "asks for medical advice or mentions self-harm."
 )
 USER_LINE = "I was just thinking about my sister coming to visit this weekend, isn't that nice."
+LLM_PAUSE_S = 2.0  # spacing between LLM requests, to stay under Groq's free-tier rate limits
+
+FISH_TTS_URL = "https://api.fish.audio/v1/tts"
+FISH_MODEL = "s2.1-pro-free"  # the free hosted S2.1 model (free until 30 Nov 2026)
+FISH_VOICE = "933563129e564b19a115bedd57b7406a"  # default voice of LiveKit's Fish plugin
+FISH_LINE = "That sounds lovely, mate. How long is your sister staying?"
 
 
 @dataclass
@@ -172,6 +180,7 @@ async def llm_first_token_ms(
         {"role": "system", "content": target.system},
         {"role": "user", "content": USER_LINE},
     ]
+    await asyncio.sleep(LLM_PAUSE_S)  # before the clock starts, so not measured
     start = time.perf_counter()
     try:
         stream = await client.chat.completions.create(
@@ -242,6 +251,39 @@ async def deepgram_request_ms(http: httpx.AsyncClient, base: str, key: str, audi
     return ms_since(start)
 
 
+# --- 3b. Fish Audio TTS -----------------------------------------------------
+
+
+async def fish_first_audio_ms(
+    http: httpx.AsyncClient, key: str, latency_mode: str, edges: set[str]
+) -> float:
+    """Request speech for one short line; return time to the first audio bytes.
+
+    Fish streams the audio as it's generated, so the first bytes are what
+    playback would wait for. The request is abandoned once they arrive. The
+    ``cf-ray`` header ends with the code of the Cloudflare site that answered
+    (e.g. "-SYD"), recorded to show where the connection entered Fish's network.
+    """
+    start = time.perf_counter()
+    async with http.stream(
+        "POST",
+        FISH_TTS_URL,
+        headers={"Authorization": f"Bearer {key}", "model": FISH_MODEL},
+        json={
+            "text": FISH_LINE,
+            "reference_id": FISH_VOICE,
+            "format": "pcm",  # raw audio: no encoder delay on Fish's side
+            "latency": latency_mode,
+        },
+    ) as response:
+        response.raise_for_status()
+        edges.add(response.headers.get("cf-ray", "?-?").rsplit("-", 1)[-1])
+        async for chunk in response.aiter_bytes():
+            if chunk:
+                return ms_since(start)
+    raise RuntimeError("no audio returned")
+
+
 # --- The run -----------------------------------------------------------------
 
 
@@ -257,6 +299,7 @@ async def main() -> None:
         f"Bedrock ({settings.bedrock_region})": (bedrock_host, 443),
         "Deepgram Australian endpoint": ("api.au.deepgram.com", 443),
         "Deepgram global endpoint": ("api.deepgram.com", 443),
+        "Fish API (Cloudflare edge)": ("api.fish.audio", 443),
         "Redis (Upstash)": host_and_port(settings.redis_url.get_secret_value(), 6379),
         "Postgres (Supabase)": host_and_port(settings.supabase_db_url.get_secret_value(), 5432),
     }
@@ -309,7 +352,11 @@ async def main() -> None:
     for target in targets:
         # One client per target keeps its connection open between repetitions,
         # as the real agent would, so timings exclude connection setup.
-        async with AsyncOpenAI(base_url=target.base_url, api_key=target.api_key) as client:
+        # max_retries=0: the SDK otherwise retries rate-limited requests silently,
+        # which would show up as extra latency instead of as errors.
+        async with AsyncOpenAI(
+            base_url=target.base_url, api_key=target.api_key, max_retries=0
+        ) as client:
             row = Result(f"LLM first visible text: {target.label}")
             any_row = Result(f"LLM first token (any): {target.label}")
             await repeat(
@@ -336,6 +383,19 @@ async def main() -> None:
                     lambda b=base: deepgram_request_ms(http, b, deepgram_key, audio),  # type: ignore[misc]
                 )
             )
+
+    # 3b. Fish TTS, at two of its speed/quality settings.
+    fish_key = settings.fish_api_key.get_secret_value()
+    async with httpx.AsyncClient(timeout=TIMEOUT_S) as http:
+        for latency_mode in ("low", "balanced"):
+            edges: set[str] = set()
+            row = Result(f"Fish TTS first audio: S2.1, latency={latency_mode}")
+            await repeat(
+                row,
+                lambda m=latency_mode, e=edges: fish_first_audio_ms(http, fish_key, m, e),  # type: ignore[misc]
+            )
+            row.note = f"entered via Cloudflare {'/'.join(sorted(edges))}"
+            results.append(row)
 
     # 4. Redis and Postgres over an already-open connection, plus setup time.
     redis_client = redis_async.from_url(settings.redis_url.get_secret_value())

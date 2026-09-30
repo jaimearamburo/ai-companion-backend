@@ -18,6 +18,7 @@ VALID_ENV = {
     "LIVEKIT_API_KEY": "lk-key",
     "LIVEKIT_API_SECRET": "lk-secret-value",
     "DEEPGRAM_API_KEY": "deepgram-key",
+    "FISH_API_KEY": "fish-key",
     "GROQ_API_KEY": "groq-key",
     "BEDROCK_API_KEY": "bedrock-key",
     "BEDROCK_REGION": "ap-southeast-2",
@@ -72,7 +73,15 @@ def test_secrets_are_hidden_when_printed(monkeypatch: pytest.MonkeyPatch) -> Non
     settings = load_settings(env_file=None)
 
     printed = repr(settings) + str(settings)
-    for secret in ("lk-secret-value", "groq-key", "bedrock-key", "redis-password", "db-password"):
+    secrets = (
+        "lk-secret-value",
+        "groq-key",
+        "bedrock-key",
+        "fish-key",
+        "redis-password",
+        "db-password",
+    )
+    for secret in secrets:
         assert secret not in printed
 
 

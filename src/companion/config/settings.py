@@ -86,6 +86,8 @@ class Settings(BaseSettings):
     livekit_api_key: SecretStr
     livekit_api_secret: SecretStr
     deepgram_api_key: SecretStr
+    # Text-to-speech: Fish Audio's hosted API.
+    fish_api_key: SecretStr
     # The LLMs (scriptwriter and safety) can run on Groq or on Amazon Bedrock;
     # both are configured so either can be selected per call.
     groq_api_key: SecretStr

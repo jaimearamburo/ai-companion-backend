@@ -1,6 +1,6 @@
 # Voice Companion Backend — Task Breakdown
 
-**Stack:** Python 3.13, LiveKit Agents (self-hosted, AWS Sydney), Deepgram STT (Sydney), GPT-OSS-120B scriptwriter + Safeguard-20B safety (Groq or Bedrock Sydney), Fish S2 Pro TTS (self-hosted, Modal Australia), Redis (Upstash Sydney), Supabase Postgres + pgvector (Sydney), self-hosted embedding model. Full spec: [ARCHITECTURE.md](ARCHITECTURE.md).
+**Stack:** Python 3.13, LiveKit Agents (self-hosted, AWS Sydney), Deepgram STT (Sydney), GPT-OSS-120B scriptwriter + Safeguard-20B safety (Groq Sydney, Bedrock Sydney fallback), Fish Audio S2.1 TTS (hosted), Redis (Upstash Sydney), Supabase Postgres + pgvector (Sydney), self-hosted embedding model. Full spec: [ARCHITECTURE.md](ARCHITECTURE.md).
 
 Tasks are grouped into phases and roughly ordered by dependency. Each subtask is numbered `phase.subtask` (e.g. `6.3`) as a local reference ID for this document only. Tasks marked **(frontend)** need a matching change in the frontend repo — relay those across. Tasks marked **(decision)** need your call before work starts.
 
@@ -47,6 +47,7 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [ ] **3.3** `providers/`: registry mapping preset names to STT, TTS and LLM instances; tests
 - [ ] **3.4** Turn-detector presets (`livekit_v1_mini`, `stt_native`)
 - [ ] **3.5** Compatibility rules and `auto` speculative-trigger resolution; tests
+- [ ] **3.7** Automatic Groq → Bedrock fallback for LLM and safety requests (429 / 5xx / time budget before first token); logged; tests
 - [ ] **3.6** **(frontend)** Confirm the final preset list and dispatch-metadata shape; update ARCHITECTURE.md → Frontend contract
 
 ## Phase 4 — Core Voice Pipeline (single bot)
@@ -141,5 +142,8 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 - [x] **M.6** Vendor research and decisions for an all-in-Australia stack (STT, LLM hosts, TTS, turn detection); recorded in ARCHITECTURE.md
 - [x] **M.7** Settings: Deepgram, Groq, Bedrock required; Inworld optional
 - [x] **M.8** Latency probe (`experiments/latency_probe/`): measure LLM hosts (Groq vs Bedrock Sydney), Deepgram, Redis, Supabase from Australia; commit results
-- [ ] **M.9** Self-host Fish S2 Pro on Modal's Australian region (streaming endpoint, scale-to-zero); add to the latency probe
-- [ ] **M.10** Voice listening test: Fish S2 Pro vs production candidates (Azure Australia East, Qwen3-TTS, Orpheus) using the same script lines
+- [x] **M.9** ~~Self-host Fish S2 Pro on Modal's Australian region~~ — **Parked:** no GPU capacity on Modal in Australia (LLM experiment never started a container); Azure serverless A100 capacity-limited and \~A$12.70/h. Using Fish's hosted S2.1 API instead; RunPod design recorded in ARCHITECTURE.md → Voice (TTS)
+- [ ] **M.10** Voice listening test: pick the bots' Fish voices (and compare against alternatives if wanted) using the same script lines
+- [x] **M.11** Decide LLM and TTS hosts from measurements: Groq (Sydney) + Bedrock fallback, GPT-OSS-120B; Fish hosted S2.1; findings in ARCHITECTURE.md and `experiments/latency_probe/RESULTS.md`
+- [x] **M.12** `FISH_API_KEY` setting; Fish TTS rows in the latency probe
+- [ ] **M.13** Measure Fish S2.1 first audio over the WebSocket API and on the paid model (needs Fish account credit)

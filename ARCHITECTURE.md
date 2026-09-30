@@ -8,7 +8,7 @@ The v2 architecture — with the safety guardrail and tiered memory added — st
 
 **Group size:** the user picks 1 or 2 bots from a predefined roster via a room-setup UI before starting the call — group size is user-chosen, not fixed. A user + 1 bot (1-to-1) is a supported, intentional mode; 2 bots is the max for regular users. **Admin users (developers) may add any number of bots for testing.** The pipeline is written generically over N bots — nothing is hardcoded to 2. Room size barely changes cost: the scriptwriter only ever has 1 bot speak per turn (2 during a banter interruption), so TTS, output tokens, parallel TTS streams and LiveKit usage (all bots are tracks on one agent participant) don't grow with N. What does grow is the scriptwriter's **input prompt** — every bot's persona and per-bot cheat sheet go into every call — adding input tokens and prefill time per extra bot, and giving the LLM more personas to juggle. Token budgets in this doc are sized for 2 bots; N > 2 (admin testing) will run slightly over them. The 2-bot limit for regular users is enforced in the frontend (UI and server-side before dispatch) and re-checked by the backend at session start against the user's role.
 
-**In-region target:** every component on the latency-critical path runs in Australia — STT, turn detection, both LLMs, memory, embeddings and TTS — both for data residency and to measure how low end-to-end latency can go. Where the in-region host isn't obviously the fastest (the LLMs), the choice is made by measurement from Australia (see Engineering flags → "In-region isn't automatically fastest").
+**In-region target:** every component on the latency-critical path runs in Australia — STT, turn detection, both LLMs, memory and embeddings — **except TTS**: the chosen voice, Fish Audio S2.1, is only available as a hosted API served from the US and Tokyo (see Voice (TTS)). The LLM host was chosen by measurement from Australia (see Engineering flags → "In-region isn't automatically fastest").
 
 ## Full stack
 
@@ -19,12 +19,12 @@ The v2 architecture — with the safety guardrail and tiered memory added — st
 | 3 | Orchestration | Self-hosted LiveKit Agents (Python) on a persistent server in AWS ap-southeast-2 (Sydney) | Runs the whole turn loop next to the media edge — no trans-Pacific hop for orchestration logic |
 | 4 | STT | Deepgram Nova-3 on the Australian endpoint (`api.au.deepgram.com`) | Streaming transcription; inference and storage in AWS Sydney. Emits *preflight* transcripts (see Turn-taking). Replaced Inworld STT, which has no Australian endpoint (Inworld stays an optional preset) |
 | 5 | Turn detection | LiveKit Turn Detector **v1-mini**, running on the agent (Sydney), selectable per call | Decides when the user's turn has actually ended (turn commit). The full v1 model is only available to agents hosted on LiveKit Cloud, which has no Australian agent region; see Turn-taking |
-| 6 | Safety guardrail | GPT-OSS-Safeguard-20B on **Groq or Amazon Bedrock (Sydney, in-region)** — host chosen by measurement | Policy classifier on the live transcript; intercepts self-harm/medical-advice requests before they reach TTS |
+| 6 | Safety guardrail | GPT-OSS-Safeguard-20B on **Groq (Sydney)**, with **Amazon Bedrock (Sydney)** as automatic fallback | Policy classifier on the live transcript; intercepts self-harm/medical-advice requests before they reach TTS |
 | 7 | Memory — Tier 1 (hot) | Redis (Upstash), Sydney | Session state, room boundaries, the **profile cheat sheet** loaded at call start; read every turn |
 | 8 | Memory — Tier 2 (long-term) | Supabase Postgres + pgvector, Sydney | Atomic core facts + session summaries; searched on demand via the scriptwriter's `recall_memory` tool — never on every turn |
 | 9 | Memory — Tier 3 (rolling) | In-payload short-term buffer, 10–15 messages | Injected directly into the prompt, pruned to protect the token ceiling |
-| 10 | Scriptwriter LLM | **GPT-OSS-120B** on **Groq or Amazon Bedrock (Sydney, in-region)** — host chosen by measurement; Harmony format, low reasoning effort | Single pass: decides which bot(s) speak (the "conductor" role — originally planned as a separate LLM, merged into this one), writes dialogue + non-verbal tags, holds every persona at once; may call `recall_memory` |
-| 11 | TTS | Fish Audio **S2 Pro, self-hosted** on Modal's Australian region (development) — **non-commercial licence**; production choice open, see Voice (TTS) | Streaming synthesis, one stream per speaking bot with that bot's voice; expressive delivery (emotion and non-verbal cues) driven by the scriptwriter's markup |
+| 10 | Scriptwriter LLM | **GPT-OSS-120B** on **Groq (Sydney)**, with **Amazon Bedrock (Sydney)** as automatic fallback; Harmony format, low reasoning effort (reasoning always on) | Single pass: decides which bot(s) speak (the "conductor" role — originally planned as a separate LLM, merged into this one), writes dialogue + non-verbal tags, holds every persona at once; may call `recall_memory` |
+| 11 | TTS | Fish Audio **S2.1, hosted API** — served from the US/Tokyo, the one hot-path component outside Australia; self-hosting parked (see Voice (TTS)) | Streaming synthesis, one stream per speaking bot with that bot's voice; expressive delivery (emotion and non-verbal cues) driven by the scriptwriter's markup |
 | 12 | Embedding model | Self-hosted Hugging Face sentence-embedding model on the orchestration server — **specific model TBD after a CPU latency test** | Turns text into vectors for pgvector, both when storing memories and when searching them. No network hop, nothing leaves Australia |
 | 13 | Memory extraction LLM | Cheap LLM, **model TBD** | Post-call job: extracts atomic core facts + a session summary from each call's transcript. Off the hot path |
 
@@ -34,16 +34,16 @@ One structural note carried over from the sub-400ms design and still true here: 
 
 Every external endpoint in this stack — STT, TTS, LLM (including the safety model), plus the turn detector and the speculative-trigger strategy — must be swappable without a code rewrite. Testing provider combinations (e.g. Groq vs Bedrock for the LLMs, or several TTS voices) is an ongoing part of building this, not a one-time choice made once and hardcoded.
 
-Concretely: a config-driven provider registry maps preset names (e.g. `deepgram_nova3_au`, `fish_s2pro_modal_au`, `groq_gptoss120b`) to the actual LiveKit plugin instantiation (auth, model, region params). A Next.js test UI exposes this as dropdowns, resolved server-side (API keys never reach the browser) into preset names, sent to the LiveKit agent worker via **agent-dispatch metadata** at session start (LiveKit's `createDispatch(...)`, read back via `ctx.job.metadata` in the Python entrypoint). This is per-session, not mid-call: picking a combo starts a new test call, it doesn't hot-swap providers inside one already running.
+Concretely: a config-driven provider registry maps preset names (e.g. `deepgram_nova3_au`, `fish_s21_hosted`, `groq_gptoss120b`) to the actual LiveKit plugin instantiation (auth, model, region params). A Next.js test UI exposes this as dropdowns, resolved server-side (API keys never reach the browser) into preset names, sent to the LiveKit agent worker via **agent-dispatch metadata** at session start (LiveKit's `createDispatch(...)`, read back via `ctx.job.metadata` in the Python entrypoint). This is per-session, not mid-call: picking a combo starts a new test call, it doesn't hot-swap providers inside one already running (the one exception is the automatic Groq → Bedrock fallback for a single failed LLM request, described below).
 
 **Per-call selectable presets:**
 
 | Dropdown | Presets | Default |
 | --- | --- | --- |
 | STT | `deepgram_nova3_au`, `deepgram_flux_au`, `inworld_stt1` | `deepgram_nova3_au` |
-| TTS | `fish_s2pro_modal_au`; candidates added as they're evaluated (see Voice (TTS)) | `fish_s2pro_modal_au` |
-| LLM (scriptwriter) | `groq_gptoss120b`, `bedrock_gptoss120b_syd` | chosen by the latency probe |
-| Safety model | `groq_safeguard20b`, `bedrock_safeguard20b_syd` | chosen by the latency probe |
+| TTS | `fish_s21_hosted`; parked: `fish_s2pro_selfhosted` (see Voice (TTS)) | `fish_s21_hosted` |
+| LLM (scriptwriter) | `groq_gptoss120b`, `bedrock_gptoss120b_syd` | `groq_gptoss120b` (falls back to Bedrock automatically) |
+| Safety model | `groq_safeguard20b`, `bedrock_safeguard20b_syd` | `groq_safeguard20b` (falls back to Bedrock automatically) |
 | Turn detector | `livekit_v1_mini`, `stt_native` | `livekit_v1_mini` |
 | Speculative trigger | `auto`, `livekit_preemptive`, `transcript_rules`, `transcript_debounce_only`, `vad_silence` | `auto` |
 
@@ -53,6 +53,7 @@ Preset names are provisional until the registry is implemented; the registry is 
 - `stt_native` turn detection is only valid with an STT that reports end-of-turn itself (Deepgram Flux, Inworld — not Deepgram Nova-3).
 - `auto` speculative trigger resolves by STT: `livekit_preemptive` for STTs whose LiveKit plugin emits *preflight* transcripts (Deepgram — the default — plus AssemblyAI, Soniox, Cartesia), `transcript_rules` otherwise (Inworld). See Turn-taking for why.
 - A preset whose credentials aren't configured is rejected at session start with a clear error.
+- **Automatic fallback (LLM and safety):** a request to a Groq preset that is rate-limited (HTTP 429), errors (5xx) or exceeds its time budget before the first token is retried once on the equivalent Bedrock Sydney preset, within the same turn. Retrying is safe because nothing has been spoken yet. Every fallback is logged with the reason. (Groq's free tier rate-limits realistic scriptwriter prompts; its paid tier was unavailable when this was measured.)
 
 **Config-only, not per-call:**
 - **Embedding model.** Vectors from different models aren't comparable, so every stored memory must be embedded with the same model that searches it. Changing it means re-embedding the whole memory table — a deliberate migration, never a dropdown.
@@ -183,7 +184,7 @@ User says: *"Oh you know, I was just thinking about my sister's coming to visit 
 | T ≈ +300ms or later | Turn detector commits (v1-mini: ≥0.25s VAD silence, default minimum endpointing delay 0.3s, tunable) |
 | T ≈ turn-commit | Safety verdict already sitting there → `alt` gate fires immediately; cached filler dispatched (0ms compute) **and** buffered script released to TTS, same instant |
 | T ≈ turn-commit +20–80ms | Filler audio reaches the user — first-audible-sound, comfortably inside 300ms from turn-commit |
-| T ≈ turn-commit + TTS first audio | Real audio streams in behind the filler. Self-hosted in Australia this is model time only (Fish S2 Pro: \~100ms published, on a top-end GPU) — to be measured on our hardware; filler lengths are tuned to cover it |
+| T ≈ turn-commit + TTS first audio | Real audio streams in behind the filler. Fish's hosted API measured **\~465–520ms** to first audio from Australia (free model, request/response API — the streaming WebSocket API the agent uses is still to be measured). Filler lengths are tuned to cover it |
 
 The earlier version of this table had the bet firing at T ≈ −130ms, i.e. before the user stopped speaking. That isn't achievable: a bet can only contain words the STT has already transcribed, and transcription always trails speech. The head start that matters is bet-to-commit (here roughly 200ms), not bet-to-end-of-speech.
 
@@ -388,7 +389,14 @@ The browser never decides *when* an interruption happens — it only executes th
 
 **Requirements** for a production voice: human-sounding and likeable; at or below Inworld TTS-2 Flash's price (\~$15 per 1M characters ≈ $0.0056 per call-minute), directly or via self-hosting with a commercial licence; runs in Australia; scales to hundreds or thousands of concurrent calls.
 
-**Current (development) choice: Fish Audio S2 Pro, self-hosted on Modal's Australian region.** Expressive, streaming (\~100ms to first audio published on a top-end GPU), needs \~24GB of GPU memory. Modal bills per second and scales to zero, so development costs little; its Australian region costs 1.75× base price. **Licence: the S2 Pro weights are under the Fish Audio Research License — free for non-commercial use (personal/hobbyist, evaluation and testing) only.** This project is currently non-commercial; before any commercial use, S2 Pro must be licensed from Fish Audio (enterprise self-hosting) or replaced. Only S2 Pro has downloadable weights; the newer S2.1 exists only on Fish's hosted API, which runs in the US and Tokyo, not Australia.
+**Current choice: Fish Audio S2.1, hosted API.** Pay-as-you-go ($15 per 1M bytes of text ≈ $0.0056–0.0083 per call-minute); the free `s2.1-pro-free` model is available until 30 Nov 2026 but may use requests to improve Fish's models, so **only test conversations go through the free tier** — real users require the paid model. Served from the US and Tokyo: measured **\~465–520ms to first audio** from Australia (request/response API, free model; the WebSocket streaming API and the paid model are still to be measured). S2.1's weights aren't published, so it can't be self-hosted.
+
+**Self-hosting (parked).** Fish S2 Pro (the previous version, downloadable weights under a **non-commercial** research licence) could run in Australia alongside a self-hosted LLM. Attempts and findings, 2026-09-29/30:
+- **Modal, Australian region:** no GPU capacity — requests for an L40S, then A100/H100, queued with no container starting (10+ minutes each).
+- **Azure Container Apps serverless A100, Australia East:** \~A$12.70/hour (the A100 profile bundles 24 vCPU and 220GB RAM) and an open capacity issue for new A100 replicas (microsoft/azure-container-apps#1844).
+- **RunPod Pod, NSW data centre:** a dedicated A100 80GB (\~A$2.30/hour) could host both models. Designed but not built: models on a network volume, a fresh Pod per session, **terminate (not stop) when idle**, with layered shut-off (backend timer, in-Pod idle watchdog, hard lifetime cap, external sweeper, prepaid balance with auto top-up off). **Cold start is 2–5 minutes**, so calls would start on the managed services and switch to the Pod once warm (between turns; the LLM is the same model on both).
+
+Revisit self-hosting when call volume makes a fixed GPU cost worthwhile.
 
 **Candidates evaluated:**
 
@@ -397,8 +405,9 @@ The browser never decides *when* an interruption happens — it only executes th
 | Azure Neural TTS (standard voices), Australia East | Good; styles on some voices; no laughs/sighs | $16/1M chars (commitment tiers as low as \~$7.50/1M) | ✅ | 200 concurrent by default, raisable | **Meets all four** — managed production option |
 | Qwen3-TTS (Apache 2.0), self-hosted in Sydney | Strong; emotion via plain-language instructions; voice design from a description | \~$3/1M chars at scale (Baseten's measurement, US hardware) | ✅ (self-hosted) | \~25 streams per H100 | **Meets all four** — self-hosted production option; needs listening test |
 | Orpheus 3B (Apache 2.0 + Llama 3.2 licence), self-hosted | Strong; tags `<laugh>` `<sigh>`… | Low at scale | ✅ (self-hosted) | 16–24 streams per half-H100 (Baseten) | Runner-up; English-only in production; "Built with Llama" attribution required |
-| Fish S2 Pro, self-hosted | Very strong | Low at scale + commercial licence fee (unpublished) | ✅ (self-hosted) | Serving engine batches requests | **Development choice**; commercial use needs Fish's licence |
-| Fish S2.1 / Inworld / Cartesia (hosted) | Very strong | $15/1M (Fish, Inworld); $37–50/1M (Cartesia) | ❌ US/Tokyo | ✅ | Not in Australia |
+| Fish S2 Pro, self-hosted | Very strong | Low at scale + commercial licence fee (unpublished) | ✅ (self-hosted) | Serving engine batches requests | **Parked** — non-commercial licence; no GPU capacity found on scale-to-zero platforms in Australia |
+| Fish S2.1 (hosted) | Very strong | $15/1M bytes | ❌ US/Tokyo (\~465–520ms first audio measured from Australia) | ✅ | **Current choice** |
+| Inworld / Cartesia (hosted) | Very strong | $15/1M (Inworld); $37–50/1M (Cartesia) | ❌ US | ✅ | Not in Australia; Inworld's API needs a paid plan |
 | Azure HD voices | Excellent (automatic emotion, laughs/sighs) | $22/1M | ❌ Singapore nearest | ✅ | Not in Australia |
 | Polly Generative / Deepgram Aura-2 (Sydney) | Very natural / clear but flat | \~$30/1M | ✅ | ✅ | \~2× the price target |
 | Voxtral, Higgs Audio V3, Fish 1.x | — | — | — | — | Non-commercial licences |
@@ -421,7 +430,7 @@ Everything the frontend repo must implement to match this backend. Field and mes
   "bots": ["<bot_id>", "<bot_id>"],
   "presets": {
     "stt": "deepgram_nova3_au",
-    "tts": "fish_s2pro_modal_au",
+    "tts": "fish_s21_hosted",
     "llm": "groq_gptoss120b",
     "safety": "groq_safeguard20b",
     "turn_detector": "livekit_v1_mini",
@@ -459,10 +468,10 @@ Same assumptions as before, updated for the max room size: user + 2 bots: 1 minu
 | GPT-OSS-120B (scriptwriter, Groq or Bedrock) | \~3 calls/min, \~800 in / \~80 out tokens at \~$0.15 / $0.60 per 1M (2× the 20B model) | \~$0.0005 |
 | Redis (Tier 1) | Low/free tier until scale, amortized fixed fee | \~$0.0005 |
 | Supabase + pgvector (Tier 2) | Free tier until scale, amortized fixed fee — **must move to paid before launch, see Engineering flags** | \~$0.0005 |
-| TTS (self-hosted Fish S2 Pro) | Fixed GPU time, not per character — see Voice (TTS) | volume-dependent |
-| **Total excluding TTS** |  | **\~$0.0090/min (≈0.9¢)** |
+| Fish Audio S2.1 (TTS, hosted) | $15 per 1M bytes of text; 40% × \~930 chars/min | \~$0.0056–0.0083 |
+| **Total** |  | **\~$0.0146–0.0173/min (≈1.5–1.7¢)** |
 
-TTS is the line that depends most on volume. Self-hosted, it's fixed GPU cost: \~$0.001 per call-minute at full utilisation, far more at low volume (Modal's scale-to-zero keeps development cheap). For comparison, hosted engines cost \~$0.0056/min (Inworld, Fish hosted) and \~$0.006/min (Azure; \~$0.0028 with commitment tiers). Even with a hosted engine the total stays around 1.5¢/min, half the 3¢ ceiling. The two database lines (Redis, Supabase) are flat/tiered vendor fees, not per-minute usage APIs, so the $/min figures above are amortization, not a quote; they get *cheaper* per minute as concurrent usage grows, unlike the STT line which scales linearly with usage.
+Roughly half the 3¢ ceiling, with TTS the largest line. The range reflects how fast the bots talk (Fish's own conversion, \~12 hours of speech per 1M bytes, gives the upper figure). Self-hosting TTS would turn this line into a fixed GPU cost — cheaper only at high, steady volume (see Voice (TTS)). The two database lines (Redis, Supabase) are flat/tiered vendor fees, not per-minute usage APIs, so the $/min figures above are amortization, not a quote; they get *cheaper* per minute as concurrent usage grows, unlike the STT, LLM and TTS lines which scale linearly with usage.
 
 **Not yet in the table (to be measured, not guessed):**
 - **Wasted speculative bets** — up to \~0.12¢/min worst case (see Turn-taking); the bet cap and rules exist to keep it well below that.
@@ -475,7 +484,7 @@ TTS is the line that depends most on volume. Self-hosted, it's fixed GPU cost: \
 
 - **"<15ms for the safety pass" isn't realistic for a network call to Groq, but the fix is architectural, not a vendor swap.** Even at Groq's speeds, an API round-trip (TLS, serialization, queueing) plus inference realistically lands in the low tens of ms, not single digits. The fix: run the safety check **in parallel with the speculative scriptwriter draft**, not serially in front of it (see the sequence diagram). The real constraint isn't "under 15ms" — it's "finishes before turn-detection commits."
 - **"Under 50ms Groq inference" doesn't hold for the scriptwriter model.** The scriptwriter is GPT-OSS-**120B** (chosen over 20B for staying in character, handling several personas and tool-call judgement), which runs at \~500 tok/s on Groq — 2ms/token, half 20B's speed, at twice the per-token price. A first clause (\~15–20 tokens) takes \~30–40ms of generation; full lines for 2 bots with tags, 150–300ms. Much of this happens during the speculative bet, before turn commit. The 1,500-token ceiling in the brief is really an *input* budget — the output budget needs its own, tighter cap. Groq offers prompt caching for the gpt-oss models (cached input at half price), which suits the large, mostly static persona/cheat-sheet prompt.
-- **In-region isn't automatically fastest.** Groq's LPUs are much faster per token than typical GPU serving, and Groq has a Sydney data centre — but whether it serves gpt-oss to Australian traffic from Sydney is unconfirmed. Amazon Bedrock runs GPT-OSS-120B and Safeguard-20B **in-region in Sydney** (confirmed on AWS's model pages), but one published benchmark measured \~475ms to first token for gpt-oss-20b on Bedrock (region not stated). Groq from the US could still beat Bedrock from Sydney. Both are configured; the host is chosen by the latency probe (`experiments/latency_probe/`), measured from Australia.
+- **In-region isn't automatically fastest — Groq was chosen by measurement.** From Australia, with a realistic \~1.2k-token scriptwriter prompt: Groq (confirmed served from Sydney via its `x-groq-region: syd` header) reached first visible text in \~465ms (gpt-oss-20b) / \~531ms (120b); Bedrock Sydney \~550ms, and its Priority tier didn't help (\~430–555ms). **Groq's own per-request timings show \~200–250ms of that is queueing** on its shared capacity — prompt processing is only \~5–80ms — so the model is fast but the wait isn't. Groq's Performance tier (prioritised capacity, low p99) is enterprise-only. Groq's free tier also rate-limits realistic prompts, hence the automatic Bedrock fallback. The safety model is fast on Groq (\~117ms first text vs \~450ms on Bedrock). Under 200ms to first visible text isn't reachable on these managed hosts with reasoning on; the speculative bet absorbs \~250ms of it and the filler covers the rest. Details: `experiments/latency_probe/RESULTS.md`.
 - **Turn Detector v1 is not available to self-hosted agents.** LiveKit serves v1 only to agents hosted on LiveKit Cloud, whose agent hosting has no Australian region. Our self-hosted Sydney agent uses v1-mini (local CPU) or Deepgram Flux's built-in end-of-turn detection; all turn-taking tuning targets v1-mini.
 - **The speculative bet cannot fire before the user stops speaking** (the brief's T ≈ −130ms). A bet only contains transcribed words, and transcription trails speech. Realistically it fires at T ≈ 0 to +100ms, still well ahead of turn commit (≥ +300ms with default settings). See Latency budget.
 - **"Tier 2 recall (if ready in time)" in the original sequence diagram can't work.** An LLM request can't accept new input once started, so a lookup running in parallel with the scriptwriter would always arrive too late. Replaced by the preloaded cheat sheet + `recall_memory` tool (see Memory).
@@ -486,7 +495,8 @@ TTS is the line that depends most on volume. Self-hosted, it's fixed GPU cost: \
 - **Non-verbal cues differ per TTS engine.** The brief's tags (`[sigh]`, `[laugh]`, `[chuckle]`) match Inworld TTS-2 Flash's syntax; other engines use different markup (Orpheus `<sigh>`, Azure speaking styles, Fish and Qwen3-TTS inline instructions). The scriptwriter emits one engine-neutral markup, and each TTS preset translates it — part of the provider registry.
 - **STT moved from Inworld to Deepgram Nova-3 on the Australian endpoint.** Inworld STT has no Australian endpoint (and its API requires a paid subscription); Deepgram's `api.au.deepgram.com` runs inference and storage in AWS Sydney at global pricing. Inworld's acoustic voice profiling (emotion/accent/age) is lost; if wanted, it can be rebuilt self-hosted later (e.g. emotion2vec, MIT-licensed) — note that common age/gender models are non-commercial and that inferring emotion or age from voice is sensitive data for the privacy review. Inworld stays an optional preset.
 - **Deepgram's interim-result cadence from Sydney decides how early a bet can fire,** and must be measured; the stabilization thresholds are validated against it.
-- **TTS licence: the development voice is non-commercial.** Fish S2 Pro's weights are under the Fish Audio Research License. Fine while this project is non-commercial; before any commercial use, license it from Fish Audio or switch preset (see Voice (TTS)). The same applies to any other research-licensed component added later.
+- **TTS is the one hot-path component outside Australia.** Fish's hosted S2.1 measured \~465–520ms to first audio from Australia (vs Fish's advertised \~90ms model time); the connection enters Cloudflare in Sydney but synthesis happens in the US/Tokyo. Its free model may use requests for training — test conversations only. A self-hosted Fish S2 Pro in Australia is possible but parked (non-commercial licence, GPU capacity, fixed cost; see Voice (TTS)).
+- **Scale-to-zero GPUs in Australia were unavailable when tested.** Modal's Australian region never started a GPU container, and Azure has an open A100 capacity issue. Anything self-hosted in Australia needs dedicated, always-on (or pre-started) capacity — e.g. a RunPod Pod or an AWS Sydney GPU instance — with a 2–5 minute cold start.
 - **Unverified, to check during implementation:**
   - Whether LiveKit's developer allowance lets a *locally run* agent use v1 during development (production self-hosting gets v1-mini regardless).
   - LiveKit's turn-detection benchmarks are the vendor's own, not independent.
@@ -494,7 +504,7 @@ TTS is the line that depends most on volume. Self-hosted, it's fixed GPU cost: \
   - That audio-frame `userdata` tags survive the whole `AgentSession` output path (first prototype check — see Multi-bot audio output).
   - Groq: where gpt-oss is served for Australian traffic (the latency probe answers this), whether tool calls stream (tool use is supported, parallel tool calls are not), and account rate limits under speculative-bet load.
   - Bedrock Sydney: real time-to-first-token and generation speed for GPT-OSS-120B and Safeguard-20B (latency probe).
-  - Fish S2 Pro on Modal's Australian region: time to first audio, concurrent streams per GPU, and cold-start time.
+  - Fish S2.1 time to first audio over its streaming WebSocket API (what the agent uses) and on the paid model, from Sydney.
   - Embedding model CPU latency on the target instance type.
   - Exact-search latency for a realistic per-user history size (benchmark before relying on "low-single-digit ms").
 
@@ -538,3 +548,9 @@ TTS is the line that depends most on volume. Self-hosted, it's fixed GPU cost: \
 - [Orpheus TTS](https://github.com/canopyai/Orpheus-TTS)
 - [Orpheus serving (Baseten)](https://www.baseten.co/blog/canopy-labs-selects-baseten-as-preferred-inference-provider-for-orpheus-tts-model/)
 - [Supabase — connection pooling](https://supabase.com/docs/guides/database/connecting-to-postgres)
+- [Groq — optimizing latency (TTFT = queueing + prefill; x-groq-region)](https://console.groq.com/docs/production-readiness/optimizing-latency)
+- [Groq — Performance tier](https://console.groq.com/docs/performance-tier)
+- [Fish Audio — TTS API](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech)
+- [Azure Container Apps — A100 capacity issue](https://github.com/microsoft/azure-container-apps/issues/1844)
+- [Azure Container Apps — serverless GPUs](https://learn.microsoft.com/en-us/azure/container-apps/gpu-serverless-overview)
+- [RunPod — manage Pods (stop vs terminate)](https://docs.runpod.io/pods/manage-pods)

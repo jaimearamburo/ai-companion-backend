@@ -20,7 +20,7 @@ Call `load_settings()` once at worker startup and pass the object (or the values
 ## Rules
 
 - **Sources:** real environment variables, plus a local `.env` file if present (development only). Real environment variables win over the file. `KEY=` with no value counts as not set.
-- **Required** (the worker won't start without them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `DEEPGRAM_API_KEY`, `GROQ_API_KEY`, `BEDROCK_API_KEY`, `BEDROCK_REGION` (validated as an AWS region code), `REDIS_URL`, `SUPABASE_DB_URL`. Groq and Bedrock are both required because either can host the LLMs, selected per call.
+- **Required** (the worker won't start without them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `DEEPGRAM_API_KEY`, `FISH_API_KEY`, `GROQ_API_KEY`, `BEDROCK_API_KEY`, `BEDROCK_REGION` (validated as an AWS region code), `REDIS_URL`, `SUPABASE_DB_URL`. Groq and Bedrock are both required: Groq is the primary LLM host and Bedrock its automatic fallback.
 - **Optional, checked per preset:** keys only some provider presets use (currently `INWORLD_API_KEY`) may be unset here; the provider registry rejects a call that selects a preset needing a missing key.
 - **Secrets** are `SecretStr` — hidden when printed or logged. Connection URLs are secrets too (they embed passwords).
 - **Error messages** name the variable and the problem, never the value.
