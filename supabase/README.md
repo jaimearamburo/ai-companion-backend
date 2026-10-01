@@ -31,3 +31,4 @@ SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version
 | File | What it does |
 |---|---|
 | `20260930065124_create_users_and_accounts.sql` | `users` and `accounts` for Auth.js (custom adapter): lowercase-only emails, `updated_at` trigger, RLS on, API-role grants revoked |
+| `20260930073542_create_bots_sessions_messages.sql` | `bots`, `sessions`, `session_bots`, `messages` (16 hash partitions), `user_bot_relationships`; same-user composite references; RLS on everywhere |

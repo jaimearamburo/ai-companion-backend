@@ -1,7 +1,13 @@
 -- Behavioural checks run after all migrations are applied in CI. Each check
 -- raises an exception (failing CI) if the schema doesn't enforce its rule.
 -- Runs against CI's throwaway database only; it inserts test rows.
+--
+-- Pattern used below: a nested BEGIN ... EXCEPTION WHEN <error> block runs a
+-- statement that must be rejected. If it succeeds instead, the RAISE right after
+-- it fails the check; if it's rejected with the expected error, the handler
+-- swallows the error and the checks carry on.
 
+-- --- users / accounts (20260930065124) --------------------------------------------
 DO $$
 DECLARE
     test_user_id uuid;
@@ -11,8 +17,7 @@ BEGIN
     BEGIN
         INSERT INTO public.users (email) VALUES ('Mixed.Case@example.com');
         RAISE EXCEPTION 'check failed: an email with capitals was accepted';
-    EXCEPTION WHEN check_violation THEN
-        NULL;  -- expected
+    EXCEPTION WHEN check_violation THEN NULL;
     END;
 
     -- Emails must be unique.
@@ -20,8 +25,7 @@ BEGIN
     BEGIN
         INSERT INTO public.users (email) VALUES ('someone@example.com');
         RAISE EXCEPTION 'check failed: a duplicate email was accepted';
-    EXCEPTION WHEN unique_violation THEN
-        NULL;  -- expected
+    EXCEPTION WHEN unique_violation THEN NULL;
     END;
 
     -- New users default to the 'user' role.
@@ -44,11 +48,129 @@ BEGIN
     IF EXISTS (SELECT 1 FROM public.accounts WHERE provider_account_id = 'google-123') THEN
         RAISE EXCEPTION 'check failed: accounts were not deleted with their user';
     END IF;
+END;
+$$;
 
-    -- Row-level security is on for every table in the public schema.
+-- --- bots / sessions / session_bots / messages / relationships (20260930073542) ------
+DO $$
+DECLARE
+    alice uuid;
+    bob uuid;
+    gary uuid;
+    paul uuid;
+    call_id uuid;
+    partition_count integer;
+BEGIN
+    INSERT INTO public.users (email) VALUES ('alice@example.com') RETURNING id INTO alice;
+    INSERT INTO public.users (email) VALUES ('bob@example.com') RETURNING id INTO bob;
+    INSERT INTO public.bots (slug, display_name, persona_prompt, voice_id)
+    VALUES ('gary', 'Gary', 'Warm retired builder.', 'voice-gary') RETURNING id INTO gary;
+    INSERT INTO public.bots (slug, display_name, persona_prompt, voice_id)
+    VALUES ('paul', 'Paul', 'Gentle former teacher.', 'voice-paul') RETURNING id INTO paul;
+
+    -- Bot slugs are lowercase words joined by hyphens.
+    BEGIN
+        INSERT INTO public.bots (slug, display_name, persona_prompt, voice_id)
+        VALUES ('Gary Two', 'Gary 2', 'x', 'v');
+        RAISE EXCEPTION 'check failed: an invalid bot slug was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    INSERT INTO public.sessions (user_id, livekit_room_name, stt_preset, tts_preset, llm_preset,
+                                 safety_preset, turn_detector_preset, trigger_preset)
+    VALUES (alice, 'room-1', 'deepgram_nova3_au', 'fish_s21_hosted', 'groq_gptoss120b',
+            'groq_safeguard20b', 'livekit_v1_mini', 'auto')
+    RETURNING id INTO call_id;
+    INSERT INTO public.session_bots (session_id, bot_id) VALUES (call_id, gary), (call_id, paul);
+
+    -- A session's status and end time must agree.
+    BEGIN
+        UPDATE public.sessions SET ended_at = now() WHERE id = call_id;  -- still 'active'
+        RAISE EXCEPTION 'check failed: an active session was given an end time';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    -- Transcript lines: user lines have no bot, bot lines must name the bot.
+    INSERT INTO public.messages (user_id, session_id, seq, speaker, text)
+    VALUES (alice, call_id, 0, 'user', 'Hello!');
+    INSERT INTO public.messages (user_id, session_id, seq, speaker, bot_id, text, interrupted)
+    VALUES (alice, call_id, 1, 'bot', gary, 'G''day, how are you', true);
+    BEGIN
+        INSERT INTO public.messages (user_id, session_id, seq, speaker, text)
+        VALUES (alice, call_id, 2, 'bot', 'A bot line without a bot');
+        RAISE EXCEPTION 'check failed: a bot line without bot_id was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.messages (user_id, session_id, seq, speaker, bot_id, text)
+        VALUES (alice, call_id, 2, 'user', gary, 'A user line with a bot');
+        RAISE EXCEPTION 'check failed: a user line with bot_id was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.messages (user_id, session_id, seq, speaker, text, interrupted)
+        VALUES (alice, call_id, 2, 'user', 'Interrupted user line', true);
+        RAISE EXCEPTION 'check failed: a user line was marked interrupted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    -- Two lines can't share a position in the same call.
+    BEGIN
+        INSERT INTO public.messages (user_id, session_id, seq, speaker, text)
+        VALUES (alice, call_id, 0, 'user', 'Duplicate position');
+        RAISE EXCEPTION 'check failed: a duplicate message seq was accepted';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+
+    -- A message can't be attached to another user's session.
+    BEGIN
+        INSERT INTO public.messages (user_id, session_id, seq, speaker, text)
+        VALUES (bob, call_id, 0, 'user', 'Wrong user');
+        RAISE EXCEPTION 'check failed: a message was attached to another user''s session';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- messages is split into 16 partitions.
+    SELECT count(*) INTO partition_count FROM pg_inherits
+    WHERE inhparent = 'public.messages'::regclass;
+    IF partition_count <> 16 THEN
+        RAISE EXCEPTION 'check failed: messages has % partitions, expected 16', partition_count;
+    END IF;
+
+    -- Relationship rapport stays within 1-10.
+    INSERT INTO public.user_bot_relationships (user_id, bot_id) VALUES (alice, gary);
+    BEGIN
+        UPDATE public.user_bot_relationships SET rapport_level = 11 WHERE user_id = alice;
+        RAISE EXCEPTION 'check failed: rapport_level 11 was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    -- A bot with history can't be deleted (retire it with is_active instead).
+    BEGIN
+        DELETE FROM public.bots WHERE id = gary;
+        RAISE EXCEPTION 'check failed: a bot with history was deleted';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
+
+    -- Deleting a user deletes their sessions, transcripts and relationships.
+    DELETE FROM public.users WHERE id = alice;
+    IF EXISTS (SELECT 1 FROM public.sessions WHERE id = call_id)
+       OR EXISTS (SELECT 1 FROM public.session_bots WHERE session_id = call_id)
+       OR EXISTS (SELECT 1 FROM public.messages WHERE session_id = call_id)
+       OR EXISTS (SELECT 1 FROM public.user_bot_relationships WHERE user_id = alice) THEN
+        RAISE EXCEPTION 'check failed: a user''s calls were not deleted with them';
+    END IF;
+END;
+$$;
+
+-- --- Rules for every table, whichever migration created it --------------------------
+DO $$
+BEGIN
+    -- Row-level security is on for every table in the public schema, including
+    -- partitioned tables ('p') and their partitions ('r').
     IF EXISTS (
         SELECT 1 FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-        WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity
+        WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relrowsecurity
     ) THEN
         RAISE EXCEPTION 'check failed: a public table has row-level security disabled';
     END IF;
@@ -57,16 +179,16 @@ BEGIN
     IF EXISTS (
         SELECT 1 FROM pg_tables t, (VALUES ('anon'), ('authenticated')) AS r(role_name)
         WHERE t.schemaname = 'public'
-          AND has_table_privilege(r.role_name, format('public.%I', t.tablename), 'SELECT,INSERT,UPDATE,DELETE')
+          AND has_table_privilege(r.role_name, format('public.%I', t.tablename),
+                                  'SELECT,INSERT,UPDATE,DELETE')
     ) THEN
         RAISE EXCEPTION 'check failed: anon or authenticated can access a public table';
     END IF;
 
     -- Every migration file recorded itself.
-    IF NOT EXISTS (
-        SELECT 1 FROM supabase_migrations.schema_migrations WHERE version = '20260930065124'
-    ) THEN
-        RAISE EXCEPTION 'check failed: migration 20260930065124 did not record itself';
+    IF (SELECT count(*) FROM supabase_migrations.schema_migrations
+        WHERE version IN ('20260930065124', '20260930073542')) <> 2 THEN
+        RAISE EXCEPTION 'check failed: not every migration recorded itself';
     END IF;
 END;
 $$;

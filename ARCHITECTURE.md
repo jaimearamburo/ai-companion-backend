@@ -290,17 +290,51 @@ CREATE INDEX accounts_user_id_idx ON accounts (user_id);
 
 **RLS is mandatory:** Supabase exposes `public` tables through its API, so every table — especially `users` with `password_hash` — has RLS enabled. With Auth.js (not Supabase Auth), Supabase's `auth.uid()` doesn't work out of the box; until user-facing policies are designed, tables are accessed only server-side (frontend with the service-role key, backend over a direct Postgres connection) and RLS denies everything else. Migrations also revoke the default table privileges Supabase grants to its `anon` and `authenticated` API roles, so the browser-facing roles have no access even if a policy is added by mistake.
 
+### How the tables relate
+
+```
+users ──1:N── accounts                         (login providers)
+  │
+  ├──1:N── sessions ──N:M── bots               (via session_bots: which bots were in each call)
+  │           │
+  │           └──1:N── messages ──N:1── bots   (who said each line: the user, or a bot)
+  │
+  ├──1:N── memories ──N:M── bots               (via memory_witnesses: which bots heard each memory)
+  │           ├── N:1 → sessions               (the call it was learned in)
+  │           └── N:1 → memories               (superseded_by: the newer fact that replaced it)
+  │
+  └──N:M── bots                                 (via user_bot_relationships: how well each bot knows the user)
+```
+
+**Delete rules:** deleting a **user** cascades to everything that belongs to them (accounts, sessions, transcripts, relationships, memories) — the right to be forgotten. **Bots** are never deleted while anything refers to them (`ON DELETE RESTRICT`); they're retired with `is_active = false`. Deleting a **session** cascades to its bot list and transcript, but a memory learned in it survives (`session_id` becomes null).
+
+**Same-user guarantee:** tables partitioned by `user_id` reference their parent with `(user_id, id)` pairs rather than `id` alone (e.g. `messages (user_id, session_id) → sessions (user_id, id)`), so the database itself guarantees a transcript line or memory can't be attached to another user's session or memory.
+
+### Calls, bots and transcripts (migration `20260930073542`)
+
+The authoritative definitions are in the migration file; summary:
+
+- **`bots`** — the roster: `slug` (short fixed name, e.g. `gary`), `display_name`, `persona_prompt` (personality text the scriptwriter reads), `ui_description` (room-setup bio), `avatar_url`, `voice_id` (Fish Audio voice reference), `is_active`, timestamps. Referenced by `session_bots`, `messages`, `user_bot_relationships` and `memory_witnesses`.
+- **`sessions`** — one row per call: `user_id → users`, `livekit_room_name`, `status` (`active` / `ended` / `failed`, kept consistent with `ended_at`), `end_reason`, one column per chosen preset (`stt_preset`, `tts_preset`, `llm_preset`, `safety_preset`, `turn_detector_preset`, `trigger_preset`), `started_at`, `ended_at`.
+- **`session_bots`** — junction table: which bots were in each call (`session_id`, `bot_id`). The source of truth for "who was in the room", copied into `memory_witnesses` by the post-call job.
+- **`messages`** — the transcript, one row per spoken line: `session_id`, `seq` (order within the call), `speaker` (`user` / `bot`), `bot_id` (set exactly when a bot spoke), `text` (what was actually **heard**), `interrupted` (bot lines only), `spoken_at`. Hash-partitioned by `user_id` into 16 partitions.
+- **`user_bot_relationships`** — one row per (user, bot) pair that has talked: `first_met_at`, `last_call_at`, `call_count`, `rapport_level` (1 = just met … 10 = close friend) and `rapport_notes` (short summary), both maintained by the post-call job. The scriptwriter reads it so each bot treats the user as a new acquaintance or an old friend as appropriate.
+
+**Frontend note:** the room-setup screen reads `bots` (active only) server-side with the service-role key; the browser roles have no access (RLS).
+
 ### Draft — memory tables (not yet a migration)
 
-`user_id` is always the end user (the person talking to the bots) and references `users (id)`. Referenced tables marked TBD (sessions, bots) aren't designed yet.
+**Written once the embedding model is chosen (task 7.1)**, because the model fixes the vector column's size.
+
+`user_id` is always the end user (the person talking to the bots) and references `users (id)`.
 
 ```sql
 CREATE TYPE memory_type AS ENUM ('core_fact', 'session_summary');
 
 CREATE TABLE memories (
     id              uuid        NOT NULL DEFAULT gen_random_uuid(),
-    user_id         uuid        NOT NULL,              -- the end user; FK TBD
-    session_id      uuid,                              -- call it came from; FK to sessions TBD
+    user_id         uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    session_id      uuid,                              -- call it came from (→ sessions, see below)
     type            memory_type NOT NULL,
     memory_text     text        NOT NULL,
     importance      smallint    CHECK (importance BETWEEN 1 AND 10),  -- core facts; drives the cheat sheet
@@ -308,7 +342,7 @@ CREATE TABLE memories (
     embedding_model text,
     occurred_at     timestamptz,                       -- when the event happened, not when stored
     created_at      timestamptz NOT NULL DEFAULT now(),
-    superseded_by   uuid,                              -- set when a later fact replaces this one
+    superseded_by   uuid,                              -- set when a later fact replaces this one (→ memories, see below)
     PRIMARY KEY (user_id, id),                         -- partition key must be part of the PK
     CHECK (type <> 'core_fact' OR embedding IS NOT NULL)
 ) PARTITION BY HASH (user_id);
@@ -318,7 +352,7 @@ CREATE TABLE memories (
 CREATE TABLE memory_witnesses (
     user_id   uuid NOT NULL,
     memory_id uuid NOT NULL,
-    bot_id    uuid NOT NULL,                           -- FK to bots TBD
+    bot_id    uuid NOT NULL REFERENCES bots (id) ON DELETE RESTRICT,
     PRIMARY KEY (user_id, memory_id, bot_id),
     FOREIGN KEY (user_id, memory_id) REFERENCES memories (user_id, id) ON DELETE CASCADE
 );
@@ -333,7 +367,7 @@ ORDER BY m.embedding <=> $3
 LIMIT 5;
 ```
 
-A `messages` (transcript) table is also needed — session, speaker (the user or which bot), text, timestamp, same `user_id` hash partitioning. For bot turns it stores what was actually **heard** (LiveKit reports the synchronized transcript when speech is interrupted), not the full generated script. **Raw transcripts are kept indefinitely for now.**
+Further references in the final migration: `(user_id, session_id) → sessions (user_id, id)` with `ON DELETE SET NULL (session_id)` so a memory outlives its call, and `(user_id, superseded_by) → memories (user_id, id)` so a fact can only be replaced by the same user's fact. Transcripts are in `messages` (above); **raw transcripts are kept indefinitely for now.**
 
 **Indexing and performance decisions:**
 - **Exact vector search per user, no HNSW (for now).** pgvector applies `WHERE` filters *after* an HNSW index scan (default `hnsw.ef_search` = 40 candidates), so an HNSW index shared by many users would, for one user, return few or no rows. A single user's history is thousands of rows, not millions, so the primary key's `user_id` prefix narrows to that user's rows and Postgres computes exact distances on them — 100% recall, expected low-single-digit ms (to be benchmarked). HNSW (with pgvector ≥0.8 iterative scans) is only worth revisiting if individual histories grow very large.
@@ -341,7 +375,7 @@ A `messages` (transcript) table is also needed — session, speaker (the user or
 - **`halfvec`** — half-precision storage halves table and index size with negligible recall loss.
 - **Connection path: Supabase's transaction pooler (Supavisor, port 6543) plus a small client-side pool held open by the agent.** The client-side pool means no lookup pays connection setup; the pooler lets thousands of calls share a small number of real database connections. Direct or session connections don't scale here: Postgres has a hard connection limit, and LiveKit runs each call in its own process, so per-call connections would exhaust it. Transaction pooling can't support prepared statements, so they're disabled in the driver; no session-level Postgres features are needed (anything that must be set is set within a single transaction).
 
-**Also needed, not yet drafted:** bots (the roster), sessions (bots present, presets used, start/end). RLS policies TBD — memories and transcripts hold sensitive personal and health information and must not be freely readable from the browser.
+**Row-level security:** every table has RLS on with **no policies** (the browser-facing roles get nothing; server-side access bypasses RLS). User-facing policies are designed if the frontend ever needs direct browser access. Memories and transcripts hold sensitive personal and health information and must never be readable from the browser.
 
 **Future, not now:** delegated access to a user's memories (e.g. by a family member) — an additive access table linking another account to that user; no change to the memory tables.
 

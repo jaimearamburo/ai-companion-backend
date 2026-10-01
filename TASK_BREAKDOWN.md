@@ -24,9 +24,9 @@ Tasks are grouped into phases and roughly ordered by dependency. Each subtask is
 *(Schema changes go into ARCHITECTURE.md's Database schema section first, then become a migration file here. Each migration file is transaction-wrapped and applied **manually** by pasting it into the Supabase dashboard SQL editor, in file order. After each applied migration, the frontend must regenerate Supabase types.)*
 - [x] **1.1** ~~Choose the Auth.js database adapter~~ — **Decided:** custom adapter in the frontend on `supabase-js`, snake_case tables, no ORM (see ARCHITECTURE.md → Database schema → Auth tables)
 - [x] **1.2** `users` + `accounts` migration from the ARCHITECTURE.md draft (including the `updated_at` trigger and RLS) — once applied, tell the frontend so it can regenerate types and build its Auth.js adapter
-- [ ] **1.3** Design and document `bots` (roster), `sessions` (calls: bots present, presets used, start/end), `messages` (transcripts, heard text per speaker)
-- [ ] **1.4** `memories` + `memory_witnesses` migration (hash-partitioned by user, `halfvec`), per the draft in ARCHITECTURE.md
-- [ ] **1.5** RLS: enable on every table; define policies (memories and transcripts are backend-only)
+- [x] **1.3** Design, document and migrate `bots`, `sessions`, `session_bots`, `messages` (16 hash partitions) and `user_bot_relationships` (migration `20260930073542`); CI checks extended
+- [ ] **1.4** `memories` + `memory_witnesses` migration (hash-partitioned by user, `halfvec`), per the draft in ARCHITECTURE.md — **waits for 7.1** (the embedding model fixes the vector size)
+- [ ] **1.5** RLS: enabled on every table with no policies (done in each migration; enforced by CI checks); user-facing policies only if the frontend ever needs direct browser access
 - [x] **1.6** ~~How to test migrations before they touch the real database~~ — **Decided:** applied directly to the Sydney project while it holds no real data; revisit a separate test database before real users use it
 - [ ] **1.7** Run each migration manually in the Supabase SQL editor (Jaime); **(frontend)** regenerate types
 - [ ] **1.8** Seed data: the bot roster, an admin user
