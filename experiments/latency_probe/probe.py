@@ -30,6 +30,10 @@ import time
 import wave
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+
+# partial(f, a, b) builds a no-argument function that calls f(a, b): a typed way
+# to hand repeat() an operation with its arguments already bound.
+from functools import partial
 from urllib.parse import urlsplit
 
 import httpx
@@ -311,9 +315,7 @@ async def main() -> None:
             row.errors.append(f"DNS {type(error).__name__}")
             results.append(row)
             continue
-        results.append(
-            await repeat(row, lambda a=address, p=port: tcp_connect_ms(a, p))  # type: ignore[misc]
-        )
+        results.append(await repeat(row, partial(tcp_connect_ms, address, port)))
 
     # 2. LLMs: both models on both hosts.
     groq_url = "https://api.groq.com/openai/v1"
@@ -361,7 +363,7 @@ async def main() -> None:
             any_row = Result(f"LLM first token (any): {target.label}")
             await repeat(
                 row,
-                lambda t=target, c=client, r=row, a=any_row: llm_first_token_ms(c, t, r, a),  # type: ignore[misc]
+                partial(llm_first_token_ms, client, target, row, any_row),
             )
             # The warm-up's "any" sample is recorded too (unless the warm-up failed);
             # drop it so both rows cover the same timed runs.
@@ -380,7 +382,7 @@ async def main() -> None:
             results.append(
                 await repeat(
                     Result(f"Deepgram 1s-audio request: {label} endpoint"),
-                    lambda b=base: deepgram_request_ms(http, b, deepgram_key, audio),  # type: ignore[misc]
+                    partial(deepgram_request_ms, http, base, deepgram_key, audio),
                 )
             )
 
@@ -392,7 +394,7 @@ async def main() -> None:
             row = Result(f"Fish TTS first audio: S2.1, latency={latency_mode}")
             await repeat(
                 row,
-                lambda m=latency_mode, e=edges: fish_first_audio_ms(http, fish_key, m, e),  # type: ignore[misc]
+                partial(fish_first_audio_ms, http, fish_key, latency_mode, edges),
             )
             row.note = f"entered via Cloudflare {'/'.join(sorted(edges))}"
             results.append(row)

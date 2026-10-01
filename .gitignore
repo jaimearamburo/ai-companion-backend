@@ -17,6 +17,7 @@ htmlcov/
 
 # 
 PRODUCT_TARGET.md
+CLAUDE.local.md
 REQUIREMENTS_FRONTEND.md
 
 # Local secrets — only .env.example is committed
