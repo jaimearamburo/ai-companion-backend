@@ -2,49 +2,46 @@
 
 [![CI](https://github.com/jaimearamburo/ai-companion-backend/actions/workflows/ci.yml/badge.svg)](https://github.com/jaimearamburo/ai-companion-backend/actions/workflows/ci.yml)
 
-The backend of a hobby **real-time voice AI companion app**: you have a spoken conversation with one or two AI companion characters, who listen, decide between them who should answer, reply in their own distinct voices, occasionally chime in on each other, and remember what you've talked about before.
+The backend of a **real-time voice AI companion**: you talk with one or two AI companion characters, who listen, decide between them who should answer, reply in their own voices, occasionally talk over each other, and remember earlier conversations. Built for Australia first, with US infrastructure for users in the Americas and Europe.
 
-This repository is the voice pipeline and the database schema. The web app (login, picking companions, joining the call) is a separate Next.js repository.
+This repository holds the agent, its tools, the voice pipeline and the database schema. The web app (login, picking companions, joining the call) is a separate Next.js repository.
 
 ## How it works
 
-A call is a continuous loop: the user speaks, the pipeline works out when they've finished, writes a reply for the right character, checks it, and speaks it — aiming for the first sound within a few hundred milliseconds.
+A call is a continuous loop: the user speaks, the pipeline works out when they've finished, the agent writes a reply for the right character, and the reply is spoken. The target is the first sound within 300ms of the user finishing and the first word of the real reply within a second.
 
 ```
   user's voice
        │  real-time audio (WebRTC)
        ▼
-  LiveKit Cloud ──────────────► Agent (this repo, Python, LiveKit Agents)
-                                  │
-                                  ├─ Speech-to-text ......... Deepgram, Australian endpoint
-                                  ├─ Turn-taking ............ has the user finished? start drafting early
-                                  ├─ Scriptwriter LLM ....... who speaks, and what they say
-                                  │    └─ Safety check ...... runs in parallel; blocks unsafe replies
-                                  ├─ Text-to-speech ......... Fish Audio, one voice per character
-                                  └─ Memory + data .......... Redis, Supabase Postgres
-                                  │
-       ◄──────────────────────────┘  each character's voice on its own audio track
+  LiveKit Cloud ──► Worker (this repo; one per call, in the user's region)
+                      ├─ LiveKit Agents ..... speech to text, turn-taking, text to speech, per-character audio tracks
+                      └─ Agent runtime ...... prompt, scriptwriter LLM, safety check, tool loop
+                              │ tool calls (MCP)
+                              ▼
+                    MCP server (Sydney) .... memory and reminder tools, scoped to the user
+                              │
+                    Postgres + pgvector .... users, characters, calls, transcripts, memories
 ```
 
-| Layer | What it does | Built with |
-|---|---|---|
-| **Real-time transport** | Carries the call's audio between the browser and the agent | LiveKit Cloud (WebRTC) |
-| **Agent** | Runs the conversation loop for each call and wires the layers below together | Python, LiveKit Agents |
-| **Speech-to-text** | Streams a live transcript of what the user is saying | Deepgram Nova-3 (Australian endpoint) |
-| **Turn-taking** | Detects when the user has really finished speaking, and starts drafting a reply *before* that's certain — discarded if they keep talking — to hide model latency | LiveKit turn detector + a custom speculative trigger |
-| **Scriptwriter LLM** | One model plays every character: decides which companion should reply (or both), writes their lines with emotional cues, and can look up older memories when it needs them | gpt-oss-120b on Groq (Sydney), with automatic fallback to Amazon Bedrock (Sydney) |
-| **Safety** | A separate classifier checks the conversation alongside the reply; if anything is unclear or fails, a safe response plays instead (fails closed) | gpt-oss-safeguard-20b |
-| **Text-to-speech** | Turns each line into speech in that character's voice, streamed as it's generated | Fish Audio |
-| **Memory** | Recent conversation in the prompt; a short profile loaded when a call starts; long-term memories searched only when needed, and written after each call | Redis, Postgres + pgvector |
-| **Data** | Accounts, companions, call history, transcripts — schema owned by this repo | Supabase Postgres |
+| Layer | What it does |
+|---|---|
+| **Real-time transport** | Carries the call's audio between the browser and the worker (LiveKit Cloud, WebRTC) |
+| **Voice pipeline** | Streams speech to text, detects when the user has really finished, starts drafting a reply early to hide model latency, and speaks each character in its own voice (LiveKit Agents) |
+| **Agent runtime** | One LLM plays every character: it chooses who answers and writes their lines, within limits enforced in code; a separate safety model screens what the user says and fails closed |
+| **Tools** | A standalone MCP server serves memory and reminder tools and decides whose data each request may see |
+| **Memory** | A short profile loaded at call start; older memories searched only when needed; new memories extracted after each call |
+| **Data** | Accounts, characters, calls, transcripts and memories in Supabase Postgres, schema owned by this repo |
 
-## Engineering highlights
+No vendor is fixed for any layer: each is chosen by latency measured from both regions ([results so far](experiments/latency_probe/RESULTS.md)). The full design is in [ARCHITECTURE.md](ARCHITECTURE.md).
 
-- **Swappable providers.** Every vendor (speech-to-text, LLM, safety, text-to-speech, turn detection) sits behind a named preset, so providers can be compared or replaced by configuration rather than code changes.
-- **Measured, not assumed.** Vendor and hosting choices were made from a latency study run from Australia ([results](experiments/latency_probe/RESULTS.md)) — e.g. finding that most of the LLM's response time was queueing on the provider's side, not the model itself.
-- **Resilience by design.** Every external call has a timeout and a failure path; the safety check fails closed; the LLM falls back to a second provider automatically.
-- **Data stays in Australia** for every latency-critical service except text-to-speech, and row-level security keeps the database closed to the browser.
-- **Quality gates.** Strict static typing (`mypy --strict`), linting, tests with coverage, and a CI job that applies every database migration to a throwaway Postgres and checks the schema's rules actually hold.
+## Engineering approach
+
+- **Measured, not assumed.** Vendor and region choices come from latency measured where the system runs; for example, most of the LLM's response time turned out to be queueing on the provider, not the model.
+- **Guardrails in code.** User scoping, tool limits, speaker limits and fixed safety wording are enforced by code and tests, not by the prompt.
+- **Proof by evaluation.** The agent is designed to be tested with simulated users, scored on what ends up stored, and run repeatedly to measure reliability.
+- **The database enforces its own rules.** Same-user references, row-level security on every table, and CI checks that try to break each rule.
+- **Quality gates.** Strict typing, linting, tests with coverage, secret scanning on every commit and in CI, and decision records for each significant choice.
 
 ## How this project is built
 

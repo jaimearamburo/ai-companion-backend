@@ -59,14 +59,9 @@ class ConfigurationError(Exception):
 class Settings(BaseSettings):
     """All configuration for the worker. Build it with ``load_settings()``."""
 
-    # How pydantic-settings reads values:
-    # - field names map to environment variables case-insensitively
-    #   (``groq_api_key`` <- ``GROQ_API_KEY``);
-    # - env_ignore_empty treats ``KEY=`` (present but empty) as not set, so an
-    #   empty line copied from .env.example counts as missing, not as "";
-    # - extra="ignore" skips unrelated variables in the environment or .env;
-    # - frozen=True makes the object read-only once loaded.
-    # The .env file path is passed in by load_settings, not fixed here.
+    # An empty ``KEY=`` copied from .env.example counts as missing rather than "",
+    # so it fails fast. Unrelated variables (e.g. experiment-only keys) are ignored,
+    # and settings are immutable once loaded. load_settings chooses the .env path.
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
         env_ignore_empty=True,
@@ -80,16 +75,14 @@ class Settings(BaseSettings):
     log_format: LogFormat = LogFormat.AUTO
 
     # --- Required: every call needs these ------------------------------------
-    # SecretStr hides the value when printed or logged (it shows '**********');
-    # code that genuinely needs the value calls .get_secret_value().
+    # Secrets are SecretStr so they never appear in logs, reprs or errors.
     livekit_url: str
     livekit_api_key: SecretStr
     livekit_api_secret: SecretStr
     deepgram_api_key: SecretStr
     # Text-to-speech: Fish Audio's hosted API.
     fish_api_key: SecretStr
-    # The LLMs (scriptwriter and safety) can run on Groq or on Amazon Bedrock;
-    # both are configured so either can be selected per call.
+    # LLM hosts for the scriptwriter and safety models.
     groq_api_key: SecretStr
     bedrock_api_key: SecretStr
     bedrock_region: str
@@ -100,9 +93,7 @@ class Settings(BaseSettings):
     # --- Optional: only needed by some provider presets ----------------------
     inworld_api_key: SecretStr | None = None
 
-    # "before" validators run on the raw text from the environment, before
-    # pydantic converts it to the field's type — here, so any casing is
-    # accepted (LOG_LEVEL=info and ENVIRONMENT=Production both work).
+    # Accept any casing in the environment (LOG_LEVEL=info, ENVIRONMENT=Production).
     @field_validator("log_level", mode="before")
     @classmethod
     def _uppercase(cls, value: object) -> object:
@@ -142,8 +133,6 @@ class Settings(BaseSettings):
             raise ValueError("must be a Postgres connection string starting with postgresql://")
         return value
 
-    # An "after" model validator runs once every field is loaded, so it can
-    # check rules that involve more than one field.
     @model_validator(mode="after")
     def _no_debug_logging_in_production(self) -> Self:
         # DEBUG is the only level allowed to include what users said, so it is
@@ -170,7 +159,6 @@ def load_settings(env_file: Path | None = DEFAULT_ENV_FILE) -> Settings:
             ``.env`` can't leak into them).
     """
     try:
-        # _env_file is pydantic-settings' way to choose the file per call.
         return Settings(_env_file=env_file)
     except ValidationError as error:
         raise ConfigurationError(_describe(error)) from None

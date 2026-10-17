@@ -176,7 +176,6 @@ def test_json_log_resolution(
 def test_reads_env_file_and_real_variables_win(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # tmp_path is a fresh temporary folder pytest creates for this test only.
     env_file = tmp_path / ".env"
     env_file.write_text(
         "\n".join(f"{name}={value}" for name, value in VALID_ENV.items())

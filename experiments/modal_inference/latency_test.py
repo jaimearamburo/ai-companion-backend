@@ -53,7 +53,7 @@ SYSTEM = (
     "kind. Start with the character's name and a colon. Never give medical advice. "
     "Use the facts below only when relevant.\nKnown facts about the user:\n" + FACTS
 )
-# The reasoning levels compared; a Literal type allows only these exact strings.
+# The reasoning levels compared.
 type Effort = Literal["low", "medium"]
 
 USER_LINE = "I was just thinking about my sister coming to visit this weekend, isn't that nice."
@@ -122,7 +122,6 @@ async def measure(client: AsyncOpenAI, label: str, model: str, effort: Effort) -
         # The very first request may cold-start the Modal container: allow minutes.
         timeout = COLD_START_TIMEOUT_S if attempt == 0 else TIMEOUT_S
         try:
-            # asyncio.timeout cancels the request if it runs longer than `timeout`.
             async with asyncio.timeout(timeout):
                 first_any, first_text, text = await one_request(client, model, effort)
         except TimeoutError:

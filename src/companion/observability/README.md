@@ -10,7 +10,7 @@ from companion.observability import configure_logging, get_logger, bind_session_
 configure_logging(level=settings.log_level, render_json=settings.use_json_logs)  # once, at startup
 
 logger = get_logger(__name__)
-bind_session_context(session_id="...", presets={"stt": "inworld_stt1", ...})  # at call start
+bind_session_context(session_id="...", presets={"stt": "deepgram_nova3_au", ...})  # at call start
 bind_turn_context(turn_id="...")                                              # at each turn
 logger.info("bet_fired", bets_this_turn=1)
 ```

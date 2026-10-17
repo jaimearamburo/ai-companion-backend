@@ -9,8 +9,6 @@ from companion.config.settings import (
     load_settings,
 )
 
-# __all__ lists the names this package deliberately exposes, so other modules
-# import from `companion.config` rather than reaching into its internal files.
 __all__ = [
     "ConfigurationError",
     "Environment",

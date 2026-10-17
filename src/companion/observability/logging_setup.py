@@ -1,14 +1,12 @@
 """Structured logging with call context attached automatically.
 
-Two kinds of code log in this worker: ours, through structlog, and third-party
-libraries such as LiveKit, through Python's standard ``logging`` module. Both
-are routed through the same pipeline of "processors" (small functions that each
-add to or edit a log entry) and the same renderer, so every line has one format.
+Our code logs through structlog; third-party libraries such as LiveKit log
+through the standard ``logging`` module. Both go through the same processors
+and renderer, so every line has one format.
 
-Call context — session id, turn id, active provider presets — is stored in
-``contextvars``: per-task variables that asyncio copies into every task a call
-starts. Once bound at the start of a call, it appears on every log line that
-call produces, without being passed around by hand.
+Call context (session id, turn id, active provider presets) lives in
+``contextvars``, which asyncio copies into every task a call starts, so it is
+bound once per call and appears on every line without being passed around.
 
 Privacy rule: fields whose names start with ``pii_`` (personally identifiable
 information, e.g. ``pii_transcript``) are stripped from every line above DEBUG
@@ -27,17 +25,12 @@ import structlog
 # prefix LiveKit Agents uses for the same purpose (e.g. "lk.pii.user_transcript").
 PII_PREFIXES = ("pii_", "lk.pii.")
 
-# structlog's type for one log entry: a mutable dict of field name -> value.
-# Values are genuinely arbitrary here (anything a caller chooses to log).
+# One log entry. Values are arbitrary: whatever a caller chooses to log.
 type EventDict = MutableMapping[str, Any]
 
 
 def drop_pii_above_debug(_logger: object, method_name: str, event_dict: EventDict) -> EventDict:
-    """Processor: remove personal-information fields unless this is a debug line.
-
-    structlog calls every processor with (logger, level name, event dict) and
-    passes the returned dict on to the next processor.
-    """
+    """Processor: remove personal-information fields unless this is a debug line."""
     if method_name != "debug":
         for key in [k for k in event_dict if k.startswith(PII_PREFIXES)]:
             del event_dict[key]
@@ -103,8 +96,7 @@ def configure_logging(
     handler = logging.StreamHandler(stream or sys.stderr)
     handler.setFormatter(formatter)
 
-    # Replace any existing handlers on the root logger (the parent of every
-    # standard logger), so each line is written exactly once, in our format.
+    # Replace any existing root handlers so each line is written once, in our format.
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level.upper())

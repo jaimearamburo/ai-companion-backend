@@ -19,67 +19,9 @@ Prepared 2026-10-17 against commit `08d6ddf`; approved 2026-10-18.
 7. **Pay only for live-call latency.** Paid services are considered only for the live-call layers: transport, worker compute, speech to text, turn detection, the scriptwriter and safety LLMs, and text to speech. Everything else lives in Sydney on free or self-hosted options where possible: the MCP server and memory lookups (a filler masks their latency), the database and vector search, the cache, embeddings, post-call extraction, evals, tracing and CI. Nothing runs around the clock unless it must: servers start on demand and scale to zero when no calls are active (D27, D35).
 8. **Vendors are chosen per layer, by measurement, when that layer is built.** No vendor is fixed yet for any layer, because none has yet reached its latency target in testing. Each layer's step measures the candidates from both regions and picks the one that meets the target, preferring vendors with in-region inference in Australia and the US. Names in this plan are candidates, not commitments.
 
-### How the pieces fit after the refactor
+### How the pieces fit
 
-LiveKit, the agent runtime and the MCP server are three separate things:
-
-- **LiveKit** is two parts. *LiveKit Cloud* is LiveKit's own media service, which carries the audio. *LiveKit Agents* is a Python library that runs inside our worker and runs the voice loop.
-- **The agent runtime** is our Python package. It runs inside the same worker process as LiveKit Agents, and LiveKit's LLM step calls it on every turn. It talks to the LLM and runs the tool loop.
-- **The MCP server** is a separate program of ours. It runs beside the memory database, holds the memory tools, and is the only piece that reads or deletes memories during a call.
-
-#### Terms used in this plan
-
-| Term | Meaning |
-|---|---|
-| **Agent** | The AI system as a whole: the agent runtime, the LLM it calls, its tools, guardrails and memory. It decides who speaks and what to say, calls tools, and works within limits enforced in code. |
-| **Agent runtime** | Our Python package `companion/agent/`, main class `CompanionAgent`. It runs the agent for each turn and has no LiveKit imports. |
-| **LiveKitBridge** | The small class that connects LiveKit Agents to the agent runtime. Named differently because LiveKit's own base class is called `Agent`. |
-| **LiveKit agent / agent participant** | LiveKit's name for any program that joins a call room. Here, the participant that speaks for the bots. Plumbing, not the AI agent. |
-| **Worker** | Our server process that waits for LiveKit to send it a call, then runs LiveKit Agents and the agent runtime for that call. |
-| **Agent name** | The label LiveKit uses to route a call to the workers in one region, for example `companion-au`. |
-| **Bot** | One character in a call. All bots in a call are voiced by the same agent in one LLM request. |
-| **MCP server** | Our separate program that holds the agent's tools (today, memory) and enforces whose data each tool may see. |
-
-#### Where each piece runs
-
-| Piece | Runs where | Talks to |
-|---|---|---|
-| LiveKit Cloud | LiveKit's servers, nearest edge to each user | The browser and our workers |
-| Worker process (one per call): LiveKit Agents + agent runtime + audio router | Our servers in AWS, started on demand in the call's region and scaled to zero when idle (D35) | LiveKit Cloud, STT, TTS, LLM and safety vendors, the MCP server; Redis only at call start and end |
-| MCP server | Our servers in AWS **Sydney**, started on demand whenever any call is active and shared by all calls (D35) | Postgres. US workers reach it across the Pacific (D12) |
-| Extraction job | After each call, in Sydney, started from a queue (D20) | Postgres, an LLM |
-| Postgres (Supabase) | Sydney | — |
-| Redis | Sydney only, free tier | — |
-| Eval runner and text CLI | A developer machine or CI | The agent runtime directly (no LiveKit), the MCP server, the LLM |
-
-In development, everything runs on one machine and the agent runtime starts the MCP server itself over stdio.
-
-#### Who does what
-
-| Job | Done by | Notes |
-|---|---|---|
-| Carry audio between the browser and the worker | **LiveKit** (Cloud + Agents framework) | WebRTC, nearest edge, one agent participant per call |
-| Send each call to the worker in the right region | **LiveKit** dispatch | One agent name per region, chosen when the call starts |
-| Voice activity, turn detection, barge-in | **LiveKit** | v1-mini turn detector on the worker CPU |
-| Speech to text and text to speech | **LiveKit** plugins | Built from the session's region profile; vendors are called directly |
-| Start drafting early and play fillers | **LiveKit** triggers, **agent runtime** drafts | LiveKit says when; the agent runtime produces the draft |
-| One audio track per bot | **LiveKit** output + **our audio router** | The router is our code plugged into LiveKit's audio output |
-| Load the memory summary (cheat sheet) at call start | **Agent runtime** asks the **MCP server**; result kept in the worker's memory for the call | All memory reads go through the MCP server, so user scoping lives in one place |
-| Build the prompt: every bot's persona, memories and the recent conversation | **Agent runtime** | Fixed section order and token budgets |
-| Choose which bot speaks and write its lines | **Scriptwriter LLM** (host to be chosen) | One request covers all bots in the call; the LLM acts as the chosen bot |
-| Check the LLM's choice | **Agent runtime** | Rejects a reply that names a bot not in the call or breaks a hard limit (D2) |
-| Call the LLM, with fallback | **Agent runtime** | Primary and fallback hosts per region chosen by measurement (D8); switch on rate limit, server error or no first token in time; reply streamed back to LiveKit |
-| Run the tool loop | **Agent runtime** | Gives the LLM the tool schemas, forwards its tool calls to the MCP server, enforces the per-turn limit and timeouts |
-| Screen user input, fixed wording | **Agent runtime** | Fails closed. Output screening is a pluggable stage, off by default (D7) |
-| Expose memory tools (recall, list, forget, ask another bot after consent) | **MCP server** | Never talks to the LLM and never decides when a tool is used |
-| Decide whose data a tool may see | **MCP server** | Scope comes from the signed session token, never from the model |
-| Embed queries and search memories | **MCP server** | Embedding model loaded once; pgvector in Postgres |
-| Write new memories after the call | **Extraction job** | Uses the same memory code as the MCP server; not called by the LLM |
-| Store memories, transcripts, users and bots | **Postgres** (Supabase) | System of record, including vectors |
-| Hold per-call state and the cheat sheet | **Worker process memory** | Each call has its own process, so nothing per-turn crosses the Pacific |
-| Shared state: per-user rate limits, the extraction queue | **Redis** in Sydney | Touched only at call start and end, never per turn |
-
-The agent runtime has no LiveKit imports, so the eval runner can call it without a voice session. The tool loop belongs to the agent runtime, not to LiveKit or the MCP server.
+LiveKit, the agent runtime and the MCP server, the terms used in this plan, where each piece runs and who does what are described in [ARCHITECTURE.md → How the pieces fit](ARCHITECTURE.md#how-the-pieces-fit).
 
 ### What happens to the code that exists today
 
@@ -95,28 +37,9 @@ Most of this plan is new code, because almost nothing behaviour-deciding exists 
 | `experiments/latency_probe/` | Extended to run from AWS in both regions with more candidates | S2 |
 | ARCHITECTURE.md | Largely rewritten to the new design | S0, then kept current |
 
-## 2. Provider regional options (checked 2026-10-17)
+## 2. Provider regional options
 
-These are the options found for each layer, not choices. Each layer's vendor is decided at the step that builds it (principle 8).
-
-Sources are listed in section 8.
-
-| Layer | Australia (default) | United States | Finding |
-|---|---|---|---|
-| Agent worker | **Self-hosted in AWS `ap-southeast-2`** | Self-hosted in AWS `us-east-1`, or LiveKit Cloud `us-east` | LiveKit Cloud hosts agents only in `us-east`, `eu-central` and `ap-south`. An Australian worker must be self-hosted. Multi-region routing is done by giving each regional deployment its own agent name and dispatching explicitly. |
-| Media transport | LiveKit `aus` region group | LiveKit `us` region group | `aus` is a single location without in-region redundancy; `us` has three. Region pinning is per **project**, needs the **Scale** plan or higher, is switched on by LiveKit support, and has no automatic failover. An unpinned project routes each client to its nearest cluster. **Pinning the project to `aus` would force US users through Australia**, so the current plan to pin should be dropped. |
-| STT | Deepgram `api.au.deepgram.com` | Deepgram `api.deepgram.com` (global, US) | The AU endpoint serves Nova-3, **Flux** (`/v2/listen`) and **Aura-2 TTS** (`/v1/speak`). Requests to it never leave Australia: if the region is down they fail rather than fall back, so failover must be explicit. |
-| LLM hosting candidates (scriptwriter and safety) | Groq, Sydney data centre; Bedrock `ap-southeast-2`; others to be listed | Groq, US data centres; Bedrock `us-east-1`, `us-east-2`, `us-west-2` | Bedrock serves gpt-oss-120b in-region in Sydney and all three US regions; safeguard-20b in the US still to be confirmed. Groq routes automatically to its nearest data centre, but its paid tier is not currently offered, so its free-tier rate limits apply. Other hosts with in-region inference in both countries are still to be identified and measured. |
-| TTS | Fish hosted API is served from the US and Tokyo only | Fish hosted API (US) | Fish is a good fit for US sessions and the slowest stage for Australian ones (~465–520ms to first audio). Australian options: Deepgram Aura-2 on the AU endpoint (self-serve), Cartesia's dedicated Australian deployment (enterprise only), Fish S2.1 through a third-party host that advertises Sydney compute (unverified), Azure Neural TTS in Australia East. |
-| Turn detection | v1-mini on the worker CPU | Same | LiveKit's docs now say the full v1 model is served on LiveKit Inference in every region and is free for agents deployed on LiveKit Cloud; v1-mini is recommended for self-hosted agents. |
-| Backchannel handling | — | — | LiveKit's adaptive interruption model (filters "mm-hm") is included for agents deployed on LiveKit Cloud, with 40,000 free requests a month in development. A self-hosted worker needs its own backchannel rule (VO-05). |
-| MCP server | Self-hosted in Sydney beside the database | US workers call the Sydney server (D12) | No vendor dependency. A US server is added only if memories get a US home. |
-| Vector store | pgvector in Supabase, Sydney (see D5) | Same database, read cross-region (see D12) | Free: already part of the database. |
-| Cache | Upstash Redis `ap-southeast-2`, free tier | Same Sydney database | Upstash supports Sydney and `us-east-1`, but the cache holds only shared state touched at call start and end, so one free Sydney database serves both regions. |
-| Database | Supabase, Sydney | — | One project. Its region is fixed. See decision D14. |
-| Embeddings | Self-hosted model in the MCP server | Same | Runs wherever the server runs. |
-
-Two corrections to ARCHITECTURE.md follow from this: the region-pinning plan and plan tier are out of date, and Flux on the Australian endpoint is now confirmed.
+The options found for each layer in each region (checked 2026-10-17), with sources, are in [ARCHITECTURE.md → Regions](ARCHITECTURE.md#regions). They are options, not choices (principle 8).
 
 ## 3. Decisions
 

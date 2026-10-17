@@ -6,6 +6,6 @@ Turns the JSON the frontend sends at call start (`ctx.job.metadata`) into a vali
 
 **Does not own:** resolving preset names into real providers (`providers/`).
 
-**Spec:** ARCHITECTURE.md → "Frontend contract", "Design requirement: pluggable providers".
+**Spec:** ARCHITECTURE.md → "Frontend contract", "Pluggable providers".
 
 **Status:** not yet implemented.

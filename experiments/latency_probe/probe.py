@@ -30,9 +30,6 @@ import time
 import wave
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-
-# partial(f, a, b) builds a no-argument function that calls f(a, b): a typed way
-# to hand repeat() an operation with its arguments already bound.
 from functools import partial
 from urllib.parse import urlsplit
 
@@ -178,8 +175,6 @@ async def llm_first_token_ms(
     low, matching the spec; if a host rejects that parameter the request is
     retried without it and the row is annotated.
     """
-    # ChatCompletionMessageParam is the SDK's type for one chat message; declaring
-    # it lets the type checker verify each message's shape.
     messages: list[ChatCompletionMessageParam] = [
         {"role": "system", "content": target.system},
         {"role": "user", "content": USER_LINE},

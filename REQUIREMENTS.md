@@ -10,20 +10,17 @@ There is a **separate `frontend` repo** (Next.js/TypeScript — room-setup UI, d
 
 A real-time voice companion app: one user talking with 1 or 2 AI bot companions. **Group size is user-chosen, not fixed:** the user picks 1 or 2 bots from a predefined roster via a room-setup UI (built in the frontend repo) before starting the call. A user + 1 bot (1-to-1) is a supported, intentional mode — it is not a minimum-2 system. 2 bots is the maximum for regular users; admin users (developers) can add any number for testing. Write the pipeline generically over N bots — never hardcode 2 — and re-check the limit against the user's role at session start. Figures in `ARCHITECTURE.md` that assume plural "bots" (cost model, token budgets) are sized for 2 bots.
 
-Target: sub-300–400ms time-to-first-audible-response, sub-3¢/min cost, everything Sydney-pinned. Full stack, cost model, sequence diagrams, and the reasoning behind every pick are in `ARCHITECTURE.md` — don't re-derive decisions that are already made and justified there; if you think one is wrong, say so and stop, don't silently change it.
+Targets: the first audible sound within 300ms of the user's turn ending (p50; 500ms at p95), the first word of the real reply within 1.0s (p50; 1.2s at p95), measured from each region, and under 3¢ per call-minute. Built for Australia first, with US infrastructure for users in the Americas and Europe. The design, cost model, sequence diagram and reasoning are in `ARCHITECTURE.md`; decisions are in PLAN.md section 3 and `docs/adr/`. Don't re-derive decisions already made; if you think one is wrong, say so and stop, don't silently change it.
 
-Current stack summary (ARCHITECTURE.md is authoritative if this drifts):
-- Transport/VAD: LiveKit Cloud, Australia region (pinning requires a paid plan — see ARCHITECTURE.md Engineering flags)
-- Orchestration: self-hosted LiveKit Agents, Python, AWS ap-southeast-2 (Sydney) — **this repo**
-- In-region target: every hot-path component runs in Australia except TTS (Fish's hosted API is US/Tokyo only)
-- STT: Deepgram Nova-3 on the Australian endpoint
-- Turn detection: LiveKit Turn Detector v1-mini on the agent (v1 is only for LiveKit-hosted agents), selectable per call; speculative-bet trigger also selectable per call
-- Safety: GPT-OSS-Safeguard-20B on Groq (Sydney) with automatic fallback to Amazon Bedrock Sydney, parallel to the speculative scriptwriter draft; fails closed
-- Memory: profile cheat sheet preloaded into Redis at call start; Supabase Postgres+pgvector searched on demand via the scriptwriter's `recall_memory` tool; in-payload rolling buffer; post-call extraction job writes new memories
-- Embeddings: self-hosted Hugging Face model on the orchestration server (model TBD)
-- Scriptwriter LLM: GPT-OSS-120B on Groq (Sydney) with automatic fallback to Amazon Bedrock Sydney, reasoning always on, single pass, decides speaker + content + tags for all bots (also the "conductor" role)
+Stack summary (ARCHITECTURE.md is authoritative if this drifts):
+- Transport: LiveKit Cloud, unpinned; each user reaches the nearest edge (`aus` or `us`)
+- Orchestration: LiveKit Agents plus our agent runtime (`CompanionAgent`), Python, self-hosted in AWS Sydney and the US, started on demand — **this repo**
+- Tools: a standalone MCP server in Sydney holds the memory and reminder tools and enforces user scoping
+- Vendors: none is fixed for any layer; each is chosen by measured latency from both regions when that layer is built
+- Safety: a separate safety model screens user input in parallel with the draft and fails closed; bot-output screening is pluggable and off
+- Memory: cheat sheet loaded from the MCP server at call start and held in the worker; Postgres + pgvector in Sydney searched on demand via `recall_memory`; rolling buffer; post-call extraction job
+- Scriptwriter LLM: one pass, reasoning always on, chooses which bot speaks and writes every bot's lines, within hard limits checked in code
 - Multi-bot output: one AgentSession, one agent participant, one audio track per bot — pending prototype
-- TTS: Fish Audio S2.1, hosted API (free model for test conversations only; paid model for real users). Self-hosting is parked (see ARCHITECTURE.md → Voice (TTS))
 - Frontend: Next.js/TypeScript — **other repo**, not built here
 ## Database schema — this repo owns it
 
@@ -35,7 +32,7 @@ Concretely:
 - `supabase/migrations/` here is the single source of truth. Never apply a schema change from anywhere else. Migrations are applied manually in the Supabase SQL editor; CI first applies them all to a throwaway Postgres and runs behavioural checks (`supabase/ci/`) — see `supabase/README.md`.
 - After any schema change, regenerate and note that the frontend needs `supabase gen types typescript` re-run on its side — tell me explicitly when this happens so I can pass it along, since I can't push that update into the frontend repo myself.
 - If a frontend need surfaces a table/column that doesn't exist yet (I'll relay this from the other repo's Claude Code session, or the developer will tell you directly), draft the migration here — don't assume the shape, ask if it's not obvious from `ARCHITECTURE.md`.
-- The memory tables have a draft in `ARCHITECTURE.md`'s Database schema section; the rest (users, bots, sessions, messages, RLS policies) isn't designed yet. Schema changes go into that section first, then become a migration here.
+- Users, accounts, bots, sessions, messages and user–bot relationships are migrated; the memory, reminder and bot-version tables are designed in `ARCHITECTURE.md`'s Database schema section. Schema changes go into that section first, then become a migration here.
 ## How I want you to work
 
 1. **Read `ARCHITECTURE.md` and this file before writing code in a new session.** Don't start from assumptions about what the stack is — the spec has already resolved a lot of vendor/design tradeoffs with sourced reasoning. If something in the spec looks wrong or has gone stale, flag it to me in your response rather than quietly working around it.
@@ -56,7 +53,7 @@ This code will be shown to potential buyers, so treat code quality as part of th
 - Python: type hints everywhere, `mypy --strict` clean. No bare `dict`/`Any` where a `TypedDict`, `dataclass`, or `pydantic` model would do — especially for the LLM script schema, provider registry configs, dispatch metadata parsing, and anything crossing a network boundary.
 - Module boundaries follow the architecture: the provider registry (STT/TTS/LLM swapping), the pipeline orchestration, memory tiers, the safety gate, and the interruption scheduler are separate, independently testable units — not one large agent file.
 **Error handling — this matters more than usual here**
-This system's hot path depends on ~5 external vendor APIs (LiveKit, STT, TTS, Groq ×2, Supabase, Redis) that will occasionally be slow, rate-limited, or down. Handle that as a first-class concern, not an afterthought:
+This system's hot path depends on several external vendor APIs (LiveKit, STT, TTS, the scriptwriter and safety LLM hosts, the MCP server and its database) that will occasionally be slow, rate-limited, or down. Handle that as a first-class concern, not an afterthought:
 - Every external call gets a timeout and an explicit failure path — never let one slow vendor call hang the turn indefinitely.
 - The safety gate fails closed: if the safety check errors, times out, or returns something unparseable, treat it as "unclear" and play the safe disclaimer — never silently fall through to the real script on an ambiguous or failed safety result.
 - Retries where they make sense (idempotent reads), not where they don't (don't retry a TTS call that partially streamed audio).
@@ -67,7 +64,7 @@ This system's hot path depends on ~5 external vendor APIs (LiveKit, STT, TTS, Gr
 - Don't chase 100% coverage on glue code; do cover anything that decides behavior (safety gating, turn-taking, provider selection, interrupt scheduling).
 **Secrets & config**
 - No credentials in code, ever, including "temporary" hardcoding while testing. Env vars locally, a real secrets manager in any deployed environment.
-- The provider-preset registry (see ARCHITECTURE.md's "Design requirement: pluggable providers") is the only place vendor config lives — no STT/TTS/LLM vendor specifics leaking into orchestration logic.
+- The provider-preset registry (see ARCHITECTURE.md's "Pluggable providers") is the only place vendor config lives — no STT/TTS/LLM vendor specifics leaking into orchestration logic.
 **Process**
 - Small, reviewable commits with messages that say *why*, not just *what*.
 - Lint + type-check + test as a CI gate before anything merges, even solo — set this up early, not after there's a backlog of violations.

@@ -1,5 +1,5 @@
-# Project metadata, dependencies and tool settings (the Python equivalent of package.json).
-# Runtime dependencies are added per task as each module is built, not upfront.
+# Project metadata, dependencies and tool settings.
+# Runtime dependencies are added as each module is built, not upfront.
 
 [project]
 name = "ai-companion-backend"
@@ -34,12 +34,12 @@ experiments = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Tells the build tool where the package lives (the "src layout": code under src/companion/).
+# src layout: the package lives under src/companion/.
 [tool.hatch.build.targets.wheel]
 packages = ["src/companion"]
 
 # ---------------------------------------------------------------------------
-# ruff: linter + formatter (replaces ESLint + Prettier)
+# ruff: linter and formatter
 # ---------------------------------------------------------------------------
 [tool.ruff]
 line-length = 100
@@ -64,15 +64,14 @@ select = [
 "tests/**" = ["S101"]
 
 # ---------------------------------------------------------------------------
-# mypy: static type checker (the equivalent of `tsc --noEmit` with strict mode)
+# mypy: strict static type checking
 # ---------------------------------------------------------------------------
 [tool.mypy]
 python_version = "3.13"
 strict = true
 mypy_path = "src"
 files = ["src", "tests", "experiments"]
-# Teaches mypy how pydantic models build their constructors (e.g. that settings
-# classes can be created without arguments because values come from env vars).
+# Lets mypy type-check pydantic constructors, including settings built from env vars.
 plugins = ["pydantic.mypy"]
 
 [tool.pydantic-mypy]
@@ -81,11 +80,21 @@ init_typed = true
 warn_required_dynamic_aliases = true
 
 # ---------------------------------------------------------------------------
+# pyright / Pylance: editor type checking. Pins the Python version and the
+# project environment so editors don't fall back to an older system Python.
+# CI's type gate is mypy (above).
+# ---------------------------------------------------------------------------
+[tool.pyright]
+pythonVersion = "3.13"
+venvPath = "."
+venv = ".venv"
+
+# ---------------------------------------------------------------------------
 # pytest: test runner
 # ---------------------------------------------------------------------------
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# "auto" lets async test functions run without decorating each one.
+# Run async tests without per-test markers.
 asyncio_mode = "auto"
 # --cov measures which lines of the package ran during the tests (see [tool.coverage] below).
 addopts = "-ra --strict-markers --cov"
@@ -98,7 +107,7 @@ addopts = "-ra --strict-markers --cov"
 # ---------------------------------------------------------------------------
 [tool.coverage.run]
 source = ["companion"]
-# Branch coverage: checks both sides of every if/try ran, not just each line once.
+# Measure branches, not just lines.
 branch = true
 
 [tool.coverage.report]
