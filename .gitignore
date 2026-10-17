@@ -33,3 +33,6 @@ supabase/.branches/
 .vscode/
 .idea/
 .DS_Store
+
+# Private working notes: never committed
+docs/private/
