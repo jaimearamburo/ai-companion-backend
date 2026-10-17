@@ -159,7 +159,9 @@ def load_settings(env_file: Path | None = DEFAULT_ENV_FILE) -> Settings:
             ``.env`` can't leak into them).
     """
     try:
-        return Settings(_env_file=env_file)
+        # Values come from the environment, not arguments. mypy's pydantic plugin
+        # understands that; pyright (the editor's checker) doesn't, so it's told here.
+        return Settings(_env_file=env_file)  # pyright: ignore[reportCallIssue]
     except ValidationError as error:
         raise ConfigurationError(_describe(error)) from None
 

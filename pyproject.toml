@@ -88,6 +88,8 @@ warn_required_dynamic_aliases = true
 pythonVersion = "3.13"
 venvPath = "."
 venv = ".venv"
+# The package lives under src/ (src layout); resolve it without relying on the venv link.
+extraPaths = ["src"]
 
 # ---------------------------------------------------------------------------
 # pytest: test runner

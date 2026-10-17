@@ -10,4 +10,5 @@ One short record per significant decision: the context, what was decided, the op
 | [0004](0004-screen-input-in-parallel-and-fail-closed.md) | Screen user input in parallel with the draft, and fail closed | Accepted |
 | [0005](0005-agent-runtime-owns-the-tool-loop.md) | The agent runtime runs the tool loop; tools live on an MCP server | Accepted |
 | [0006](0006-pgvector-exact-search-per-user.md) | Store memories in Postgres with pgvector and search each user's memories exactly | Accepted |
-| [0007](0007-bots-are-versioned-database-rows.md) | Bot definitions are validated database rows with immutable versions | Accepted |
+| [0007](0007-bots-are-versioned-database-rows.md) | Bot definitions are validated database rows with immutable versions | Accepted, amended by 0008 |
+| [0008](0008-models-per-role-belong-to-the-region-profile.md) | Models per role belong to the region profile; bots have a voice per TTS preset | Accepted |

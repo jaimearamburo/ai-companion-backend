@@ -75,6 +75,7 @@ Early stage: the foundations are in place.
 ```
 src/companion/        the application package
 ├── config/           typed settings from environment variables
+├── contracts/        strict typed models for everything crossing a boundary
 ├── dispatch/         parses/validates per-call settings sent by the frontend
 ├── providers/        preset name → configured STT/TTS/LLM/turn detector (all vendor specifics live here)
 ├── turn_taking/      speculative drafting triggers, limits and cancellation

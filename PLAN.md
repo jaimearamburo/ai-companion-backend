@@ -47,7 +47,7 @@ Numbers are stable references used throughout this plan. Status as of 2026-10-18
 
 ### 3.1 Decided
 
-Decision records in [docs/adr/](docs/adr/): D1 in 0007; D3, D4 and D33 in 0005; D5 and D6 in 0006; D7, D14 and D29 (safety) in 0004; D12, D21, D27 and D35 in 0003; D22, D24 and D25 in 0002.
+Decision records in [docs/adr/](docs/adr/): D1 in 0007 and D40 in 0008; D3, D4 and D33 in 0005; D5 and D6 in 0006; D7, D14 and D29 (safety) in 0004; D12, D21, D27 and D35 in 0003; D22, D24 and D25 in 0002.
 
 | # | Decision | Date |
 |---|---|---|
@@ -87,6 +87,7 @@ Decision records in [docs/adr/](docs/adr/): D1 in 0007; D3, D4 and D33 in 0005; 
 | D37 | No per-user limits for now; only the maximum call length. Limits can be added later as configuration. | 2026-10-18 |
 | D38 | The user switches memory deletion on or off on the room-setup screen before the call; it defaults to off. | 2026-10-18 |
 | D39 | Code comments explain why, not what the language does. Language and library explanations for the maintainer go in private learning notes and in chat, never in committed code. Existing tutorial-style comments are tidied in S0. | 2026-10-18 |
+| D40 | Bots carry a voice per TTS preset, not a model per role; models per role belong to the region profile, because one scriptwriter request voices every bot in the call. | 2026-10-18 |
 
 ### 3.2 Open
 
@@ -119,8 +120,8 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 
 ### S1 — Typed models and validated bot definitions
 - **IDs:** AR-01, AR-08, MT-02 (model)
-- **Work:** Strict Pydantic v2 models for bot definitions (persona, voice, model per role, memory policy, allowed tools, safety rules), dispatch metadata (now with `region`), script output (speaker segments and tags), memory records, tool inputs and outputs, safety verdicts and eval scenarios. A migration adding the missing bot fields and an immutable `bot_versions` table. A loader that validates every bot row and fails loudly on an invalid one.
-- **Done when:** adding a bot needs only a new validated row; tests feed malformed payloads at every boundary, including a bad bot row.
+- **Work:** Strict Pydantic v2 models for bot definitions (persona, a voice per TTS preset, memory policy, allowed tools, safety settings), dispatch metadata (now with `region`), script output (speaker segments and tags), memory records, tool inputs and outputs, safety verdicts and eval scenarios. A migration adding the missing bot fields and an immutable `bot_versions` table. A loader that validates every bot row and fails loudly on an invalid one.
+- **Done when:** adding a bot needs only a new validated row; tests feed malformed payloads at every boundary, including a bad bot row; at session start, a regular user's call with more than two bots is rejected (admins have no limit).
 - **Effort:** M. **Frontend:** regenerate Supabase types.
 
 ### S2 — Provider interfaces, region profiles and a resilient client

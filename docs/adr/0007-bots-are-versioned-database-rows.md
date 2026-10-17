@@ -1,6 +1,6 @@
 # 0007. Bot definitions are validated database rows with immutable versions
 
-- **Status:** Accepted
+- **Status:** Accepted; amended by [0008](0008-models-per-role-belong-to-the-region-profile.md)
 - **Date:** 2026-10-18
 - **Checklist items:** AR-01, AR-07, AR-08
 - **Plan decisions:** D1, D32

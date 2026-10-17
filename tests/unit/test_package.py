@@ -8,6 +8,7 @@ MODULES = [
     "companion",
     "companion.audio",
     "companion.config",
+    "companion.contracts",
     "companion.dispatch",
     "companion.extraction",
     "companion.memory",
