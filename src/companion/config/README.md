@@ -30,4 +30,4 @@ Tunable pipeline numbers (bet cap, timeouts, fade length, …) are added here as
 
 **Spec:** REQUIREMENTS.md → "Secrets & config".
 
-**Status:** implemented (task 0.7).
+**Status:** implemented.

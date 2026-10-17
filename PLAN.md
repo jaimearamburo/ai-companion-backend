@@ -2,9 +2,11 @@
 
 This plan aligns the backend with established agent-engineering practice: declarative bots with deterministic guardrails, tools behind a standard protocol, evaluation by simulated users scored on end state, versioned releases, tracing, and region-aware latency. The **product does not change**: one user talking with one or two companion bots, in real time, with safety screening and memory that carries across calls.
 
-The definition of done is the design checklist (`docs/DESIGN_CHECKLIST.md` after step 0). Each item's status is tracked in its "Met by" line.
+The definition of done is the design checklist, [docs/DESIGN_CHECKLIST.md](docs/DESIGN_CHECKLIST.md). Each item's status is tracked in its "Met by" line.
 
-Prepared 2026-10-17 against commit `08d6ddf`. **Nothing in this plan has been started.** It waits for approval, and for the decisions in section 3.
+**Progress is tracked on GitHub,** not in this file: the [Voice Companion Backend project](https://github.com/users/jaimearamburo/projects/2) and this repo's [milestones](https://github.com/jaimearamburo/ai-companion-backend/milestones). Each batch of a step is one issue whose title starts with its ticket ID (for example `S3.1`), grouped into seven milestones that show percent complete. Commits reference the ticket: `S3.1 AR-03: …` with `Closes #N` in the body.
+
+Prepared 2026-10-17 against commit `08d6ddf`; approved 2026-10-18.
 
 ## 1. Principles
 
@@ -97,7 +99,7 @@ Most of this plan is new code, because almost nothing behaviour-deciding exists 
 
 These are the options found for each layer, not choices. Each layer's vendor is decided at the step that builds it (principle 8).
 
-The regions task asks for these findings before any building. Sources are listed in section 9.
+Sources are listed in section 8.
 
 | Layer | Australia (default) | United States | Finding |
 |---|---|---|---|
@@ -159,6 +161,7 @@ Numbers are stable references used throughout this plan. Status as of 2026-10-18
 | D36 | PLAN.md is the only plan document in the repo. In S0: delete TASK_BREAKDOWN.md (kept in git history); move REFACTOR_PLAN/HANDOFF.md into `docs/private/`, which is git-ignored, alongside the assessment notes already there; copy HANDOFF's environment notes into a committed `docs/DEVELOPMENT.md`; merge REFACTOR_PLAN/NEW_CLAUDE.md into CLAUDE.md; move the checklist to `docs/`; remove the REFACTOR_PLAN folder; point CLAUDE.md, README.md, ARCHITECTURE.md and the module READMEs at PLAN.md instead of old task numbers. | 2026-10-18 |
 | D37 | No per-user limits for now; only the maximum call length. Limits can be added later as configuration. | 2026-10-18 |
 | D38 | The user switches memory deletion on or off on the room-setup screen before the call; it defaults to off. | 2026-10-18 |
+| D39 | Code comments explain why, not what the language does. Language and library explanations for the maintainer go in private learning notes and in chat, never in committed code. Existing tutorial-style comments are tidied in S0. | 2026-10-18 |
 
 ### 3.2 Open
 
@@ -183,9 +186,11 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 
 ### S0 — Standards and housekeeping
 - **IDs:** EN-02, EN-04, EN-05, EN-06 (toward), EN-03 (partial), AR-09 (ADR)
-- **Work:** Remove every other plan document so PLAN.md is the only one (D36). Add `docs/adr/` with a template and first ADRs converted from existing ARCHITECTURE.md decisions. Add a Makefile (`lint`, `test`, `eval` placeholder that fails with a clear message), pre-commit hooks (ruff, mypy, secret scan), a secret-scanning CI step with an allowlist for the fake test URLs, and a no-op CI job for docs-only changes so required checks never hang. Fix stale documentation: the sequence diagram's TTS, the multi-bot section's TTS vendor, the wasted-draft cost share (~7–8% of ~1.5–1.7¢/min), the missing rule against giving the scriptwriter raw transcripts from other calls, the auth tables still marked as a draft, the region-pinning plan and plan tier, Flux on the Australian endpoint, the turn detector's availability, Groq's paid tier (not currently offered), the database section of REQUIREMENTS.md, example preset names in two module READMEs, `.env.example`'s endpoint note, and the README's description of the project. Then update ARCHITECTURE.md with the responsibility split from section 1 and the decisions taken so far.
-- **Done when:** pre-commit and CI run the secret scan; `make lint test` pass.
-- **Effort:** M. **Risk:** low.
+- **Batch 1, documents:** PLAN.md becomes the only plan (D36). Move the checklist to `docs/`, merge the working rules into CLAUDE.md, move HANDOFF.md into the git-ignored `docs/private/`, copy its environment notes into a committed `docs/DEVELOPMENT.md`, delete TASK_BREAKDOWN.md and the REFACTOR_PLAN folder, and replace old task numbers with plan steps.
+- **Batch 2, tooling:** a Makefile (`lint`, `test`, and an `eval` placeholder that fails with a clear message), pre-commit hooks (ruff, mypy, secret scan), a secret-scanning CI step with an allowlist for the fake test URLs, a no-op CI job for docs-only changes so required checks never hang, and `docs/adr/` with a template and the first ADRs converted from ARCHITECTURE.md.
+- **Batch 3, accuracy:** fix stale documentation (the sequence diagram's TTS, the multi-bot section's TTS vendor, the wasted-draft cost share of ~7–8% of ~1.5–1.7¢/min, the missing rule against giving the scriptwriter raw transcripts from other calls, the auth tables still marked as a draft, the region-pinning plan and plan tier, Flux on the Australian endpoint, the turn detector's availability, Groq's paid tier not currently offered, the database and stack sections of REQUIREMENTS.md, example preset names in two module READMEs, `.env.example`'s endpoint note, and the README's description of the project); update ARCHITECTURE.md with the responsibility split from section 1 and the decisions so far; tidy tutorial-style comments in existing code (D39).
+- **Done when:** pre-commit and CI run the secret scan; `make lint test` pass; no document other than PLAN.md describes future work.
+- **Effort:** M, three batches. **Risk:** low.
 
 ### S1 — Typed models and validated bot definitions
 - **IDs:** AR-01, AR-08, MT-02 (model)
@@ -302,7 +307,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - **Work:** Docker Compose (worker, MCP server, Redis, Postgres with pgvector) and `make demo` (text mode needs only an LLM key). A README that leads with a short demo video, an architecture diagram, eval and latency tables, how to run it, and honest limitations. A short write-up on how reliability and recall were measured.
 - **Effort:** M.
 
-**Total:** about 29 reviewed batches. At two to four batches reviewed a day, that is roughly two to four weeks. Work that cannot be compressed sits alongside it and may set the real pace:
+**Total:** 38 tickets. At two to four batches reviewed a day, that is roughly two to four weeks. Work that cannot be compressed sits alongside it and may set the real pace:
 
 - the open decisions in section 3.2, the real bot roster, the fixed safety wording and the voice listening test;
 - hand-labelling 20–30 conversations for the judge (S16);
@@ -327,28 +332,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 | Deactivated memories and unlimited retention keep personal data | Privacy obligations | Documented policy; flagged for the privacy review before real users |
 | Scope (70 items) | Long tail | Steps ordered by impact; each ships on its own |
 
-## 6. Mapping from TASK_BREAKDOWN.md
-
-| Old item | New step |
-|---|---|
-| 1.4 memories migration, 1.9 vector benchmark, 7.1 embedding model | S6 |
-| 1.8 bot roster and seed data | S1 |
-| Phase 2 multi-bot prototype | S12 |
-| 3.1–3.2 dispatch metadata and bot count | S1 |
-| 3.3–3.5 provider registry, turn detector presets, compatibility rules | S2, S13 |
-| 3.7 LLM fallback | S14 |
-| Phase 4 core pipeline | S3 (text), S13 (voice) |
-| Phase 5 safety gate | S4 |
-| Phase 6 turn-taking and speculative drafting | S13 |
-| Phase 7 memory reads | S6, S7 |
-| Phase 8 memory writes | S8 |
-| Phase 9 multi-bot and banter | S3 (speaker checks), S13 (audio) |
-| Phase 10 resilience and quality | S14, S17 |
-| Phase 11 deployment | S15 |
-| Phase 12 documentation | S19 |
-| M.10 voice listening test, M.13 Fish WebSocket measurement | D9 |
-
-## 7. Changes the frontend repo will need
+## 6. Changes the frontend repo will need
 
 - Choose the region when issuing the LiveKit token (D15), with a `?region=` override and a log line for each decision.
 - Send a warm-up request when the room-setup screen opens, so servers are ready by the time the call starts (D35).
@@ -358,7 +342,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - Regenerate Supabase types after every migration (S1, S6, S8, S20).
 - Copy the updated ARCHITECTURE.md once S0 fixes the stale sections.
 
-## 8. Working agreement for each step
+## 7. Working agreement for each step
 
 1. List the checklist IDs the step touches before starting.
 2. Stop and ask if the step would weaken any item.
@@ -367,7 +351,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 5. Update the "Met by" lines; never renumber IDs; never mark an item met without a test or runnable command.
 6. Stop with a suggested commit message. Jaime reviews and commits every change himself.
 
-## 9. Sources
+## 8. Sources
 
 - LiveKit: [agent deployment regions](https://docs.livekit.io/deploy/admin/regions/agent-deployment.md), [regions and endpoints](https://docs.livekit.io/deploy/admin/regions/endpoints.md), [region pinning](https://docs.livekit.io/deploy/admin/regions/region-pinning.md), [turn detector](https://docs.livekit.io/agents/logic/turns/turn-detector.md), [adaptive interruption handling](https://docs.livekit.io/agents/logic/turns/adaptive-interruption-handling.md), [MCP](https://docs.livekit.io/agents/logic/tools/mcp.md), [async tools](https://docs.livekit.io/agents/logic/tools/async.md), [simulations](https://docs.livekit.io/testing/simulations.md), [unit tests](https://docs.livekit.io/testing/unit-tests.md), [OpenTelemetry traces](https://docs.livekit.io/testing/observability/tracing.md), [Inference](https://docs.livekit.io/agents/models/inference.md)
 - Deepgram: [regional endpoints](https://developers.deepgram.com/reference/regional-endpoints)

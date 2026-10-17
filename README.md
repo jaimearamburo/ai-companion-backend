@@ -50,23 +50,23 @@ A call is a continuous loop: the user speaks, the pipeline works out when they'v
 
 I designed this project and own it end to end: the architecture, the product decisions, the vendor and hosting choices (made from my own measurements), and the review of every change before it's committed.
 
-I use **Claude Code** (an AI coding assistant) as a pair programmer for implementation and research, directed through written requirements — [REQUIREMENTS.md](REQUIREMENTS.md) and [CLAUDE.md](CLAUDE.md) are the standing instructions I give it, and [TASK_BREAKDOWN.md](TASK_BREAKDOWN.md) is the plan I work through with it in small, reviewable batches.
+I use **Claude Code** (an AI coding assistant) as a pair programmer for implementation and research, directed through written requirements — [REQUIREMENTS.md](REQUIREMENTS.md) and [CLAUDE.md](CLAUDE.md) are the standing instructions I give it, and [PLAN.md](PLAN.md) is the plan I work through with it in small, reviewable batches.
 
 ## Status
 
-Early stage: the foundations are in place and the voice pipeline is next.
+Early stage: the foundations are in place.
 
-- **Done:** project foundation (typed configuration, structured logging with privacy rules, CI); database schema for accounts, companions, calls, transcripts and companion–user relationships, with automated checks; vendor selection backed by a latency study.
-- **Next:** multi-character audio routing prototype → core voice pipeline → safety gate → turn-taking and speculative drafting → memory → character-to-character interruptions.
-
-See [TASK_BREAKDOWN.md](TASK_BREAKDOWN.md) for the full plan.
+- **Done:** project foundation (typed configuration, structured logging with privacy rules, CI); database schema for accounts, companions, calls, transcripts and companion–user relationships, with automated checks; vendor research backed by a latency study.
+- **Remaining work** is in [PLAN.md](PLAN.md), and progress against the definition of done is in [docs/DESIGN_CHECKLIST.md](docs/DESIGN_CHECKLIST.md).
 
 ## Documentation
 
 | File | What it is |
 |---|---|
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The full design: stack, latency budget, memory, database schema, cost model, known issues |
-| [TASK_BREAKDOWN.md](TASK_BREAKDOWN.md) | Phased task list and progress |
+| [PLAN.md](PLAN.md) | The plan: steps, decisions and their status |
+| [docs/DESIGN_CHECKLIST.md](docs/DESIGN_CHECKLIST.md) | The definition of done, with evidence for each item |
+| [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Environment notes and gotchas |
 | [REQUIREMENTS.md](REQUIREMENTS.md) | Engineering standards and working rules |
 | [experiments/latency_probe/RESULTS.md](experiments/latency_probe/RESULTS.md) | Measured latency of every service from Australia |
 | [supabase/README.md](supabase/README.md) | How database migrations are written, checked and applied |

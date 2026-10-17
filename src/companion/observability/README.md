@@ -26,4 +26,4 @@ Log an event name plus key=value fields, not formatted sentences — fields stay
 
 **Spec:** REQUIREMENTS.md → "Error handling" (structured logging); ARCHITECTURE.md → "Turn-taking" (metrics).
 
-**Status:** logging implemented (task 0.8); metrics not yet.
+**Status:** logging implemented; tracing and metrics come in PLAN.md step S10.
