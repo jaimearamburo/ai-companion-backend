@@ -1,60 +1,76 @@
-# CI gate: every push and pull request must pass lint, format check, type check and tests.
+# CI gate: every push to main and every pull request.
+#
+# The workflow always runs, so required status checks never wait on a run that
+# was skipped. The first job works out whether anything besides documentation
+# changed; the code and migration jobs are skipped for docs-only changes, which
+# GitHub treats as passing. The secret scan always runs, because documentation
+# can leak credentials too.
 name: CI
 
-# Skipped when a push/PR only changes documentation or the license — those can't
-# break lint, types or tests. Any change touching another file runs the full checks.
 on:
   push:
-    paths-ignore:
-      - "**.md"
-      - "LICENSE"
+    branches: [main]
   pull_request:
-    paths-ignore:
-      - "**.md"
-      - "LICENSE"
+
+permissions:
+  contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to the v4.0.3 commit so a moved tag can't change what runs.
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        id: filter
+        with:
+          # 'every': a file counts only if it matches all rules, i.e. it is
+          # anything other than Markdown or the licence.
+          predicate-quantifier: every
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!LICENSE'
+
   checks:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      # Installs uv, which then installs the Python version pinned in .python-version.
-      # setup-uv publishes exact version tags only (no floating "v10"), so it's pinned exactly.
+      # setup-uv publishes exact version tags only, so it is pinned exactly.
       - uses: astral-sh/setup-uv@v10.2.0
 
-      # --locked fails the build if uv.lock is out of date with pyproject.toml.
-      # --all-groups also installs the experiments group, so experiment scripts
-      # are type-checked in CI too (they never ship with the application).
+      # --locked fails if uv.lock is out of date with pyproject.toml; --all-groups
+      # includes the experiments group so experiment scripts are type-checked too.
       - name: Install dependencies
         run: uv sync --locked --all-groups
 
-      - name: Lint
-        run: uv run ruff check .
-
-      - name: Format check
-        run: uv run ruff format --check .
-
-      - name: Type check
-        run: uv run mypy
+      - name: Lint, format check and type check
+        run: make lint
 
       - name: Tests
-        run: uv run pytest
+        run: make test
 
-  # Applies every database migration, in order, to a throwaway Postgres and runs
-  # the schema checks — so a broken migration fails here instead of in the real
-  # Supabase database (where migrations are applied by hand).
   migrations:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
-        # Postgres 17 with the pgvector extension (needed by the memory tables).
+        # Postgres 17 with pgvector, matching the production database.
         image: pgvector/pgvector:pg17
         env:
           POSTGRES_PASSWORD: postgres
         ports:
           - 5432:5432
-        # Wait until the database accepts connections before running steps.
         options: >-
           --health-cmd pg_isready
           --health-interval 5s
@@ -70,3 +86,25 @@ jobs:
 
       - name: Apply migrations and run schema checks
         run: bash supabase/ci/apply_migrations.sh
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Full history, so a secret committed and later deleted is still found.
+          fetch-depth: 0
+
+      - name: Install gitleaks (checksum-verified release)
+        run: |
+          file="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl -sSLO "${base}/${file}"
+          curl -sSLO "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep " ${file}$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum -c -
+          tar -xzf "${file}" gitleaks
+
+      - name: Scan the full history
+        run: ./gitleaks git --redact --no-banner --verbose .

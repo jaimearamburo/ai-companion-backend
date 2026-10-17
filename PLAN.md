@@ -124,6 +124,8 @@ Numbers are stable references used throughout this plan. Status as of 2026-10-18
 
 ### 3.1 Decided
 
+Decision records in [docs/adr/](docs/adr/): D1 in 0007; D3, D4 and D33 in 0005; D5 and D6 in 0006; D7, D14 and D29 (safety) in 0004; D12, D21, D27 and D35 in 0003; D22, D24 and D25 in 0002.
+
 | # | Decision | Date |
 |---|---|---|
 | D1 | Bot definitions stay in the `bots` table. Every row is validated by a strict model when loaded, edits create a new immutable row in `bot_versions`, and a release pins bot version IDs. | 2026-10-17 |

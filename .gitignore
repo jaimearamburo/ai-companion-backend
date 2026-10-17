@@ -15,7 +15,7 @@ dist/
 .coverage
 htmlcov/
 
-# 
+#
 PRODUCT_TARGET.md
 CLAUDE.local.md
 REQUIREMENTS_FRONTEND.md

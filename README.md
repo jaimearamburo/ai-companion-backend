@@ -67,6 +67,7 @@ Early stage: the foundations are in place.
 | [PLAN.md](PLAN.md) | The plan: steps, decisions and their status |
 | [docs/DESIGN_CHECKLIST.md](docs/DESIGN_CHECKLIST.md) | The definition of done, with evidence for each item |
 | [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | Environment notes and gotchas |
+| [docs/adr/](docs/adr/) | Architecture decision records |
 | [REQUIREMENTS.md](REQUIREMENTS.md) | Engineering standards and working rules |
 | [experiments/latency_probe/RESULTS.md](experiments/latency_probe/RESULTS.md) | Measured latency of every service from Australia |
 | [supabase/README.md](supabase/README.md) | How database migrations are written, checked and applied |
@@ -95,20 +96,19 @@ supabase/             the database schema (migrations/) and its CI checks (ci/)
 
 ## Local development
 
-Requires [uv](https://docs.astral.sh/uv/) (Python package and version manager — installs the right Python version automatically).
+Requires [uv](https://docs.astral.sh/uv/) (Python package and version manager; it installs the right Python version automatically) and `make`.
 
 ```bash
-uv sync                       # create .venv and install everything
+make install                  # install dependencies and the git pre-commit hooks
 cp .env.example .env          # then fill in real credentials
 
-uv run ruff check .           # lint
-uv run ruff format .          # format
-uv run mypy                   # type check (strict)
-uv run pytest                 # tests, with a coverage report of untested lines/branches
-uv run pytest --cov-report=html   # same, plus a clickable report in htmlcov/index.html
+make lint                     # lint, formatting check and strict type check
+make format                   # format the code and apply safe lint fixes
+make test                     # tests, with a coverage report of untested lines and branches
+make help                     # list every target
 ```
 
-CI runs the same checks on every push, plus the database migration check (`.github/workflows/ci.yml`).
+Every commit runs the same checks plus a secret scan through pre-commit hooks. CI runs them again on every push to `main` and every pull request, together with the database migration checks and a secret scan of the full history (`.github/workflows/ci.yml`). Decisions are recorded in [docs/adr/](docs/adr/).
 
 ## License
 

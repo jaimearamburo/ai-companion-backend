@@ -1,0 +1,10 @@
+# Secret-scanning rules: gitleaks' built-in rules plus the narrow exceptions below.
+# Used by the pre-commit hook and by the secret-scan job in CI.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "An empty variable followed by an AWS region setting (e.g. BEDROCK_REGION=ap-southeast-2) is not a secret"
+regexTarget = "match"
+regexes = ['''^[A-Z0-9_]+=\n[A-Z0-9_]*REGION=[a-z]{2}(-[a-z]+)+-\d$''']

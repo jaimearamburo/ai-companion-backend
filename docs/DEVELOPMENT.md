@@ -4,6 +4,8 @@ Things about this repo's environment that the code and other docs don't make obv
 
 ## Tooling
 
+- **Pre-commit hooks** run on every commit: whitespace and file checks, ruff, mypy and gitleaks. Install them with `make install`. The first run downloads Go to build gitleaks, so it takes a minute. Run every hook by hand with `uv run pre-commit run --all-files`.
+
 - **uv only.** `uv sync` installs the `dev` group; `uv sync --all-groups` also installs `experiments`. CI runs `uv sync --locked --all-groups`, so a stale `uv.lock` fails CI. Run `uv lock` after editing `pyproject.toml`.
 - **mypy checks `experiments/` too** (`files = ["src", "tests", "experiments"]`). Experiment scripts must stay strict-clean without `type: ignore`.
 - **Ruff also formats Python code blocks inside Markdown.** A malformed code block in a README can fail `ruff format --check`.
@@ -11,7 +13,8 @@ Things about this repo's environment that the code and other docs don't make obv
 
 ## CI
 
-- **CI skips documentation-only changes** (`paths-ignore: "**.md"`, `LICENSE`). If branch protection requires the CI checks, a docs-only pull request waits forever for checks that never run. Don't require them until the no-op docs job in PLAN.md step S0 exists.
+- **CI always runs.** Its first job checks which files changed; for changes that touch only Markdown or the licence, the code and migration jobs are skipped, which GitHub counts as passing, so required checks never hang. The secret scan runs on every change.
+- **The secret scan covers the full history** with a checksum-verified gitleaks release. Narrow exceptions live in `.gitleaks.toml`; add one only for a confirmed false positive, as specific as possible.
 - **`supabase/ci/checks.sql` lists the migration versions** in its final block. Every new migration must add its version there, plus its own behavioural checks.
 
 ## Migrations

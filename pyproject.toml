@@ -16,6 +16,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "mypy",
+    "pre-commit>=4.7.0",
     "pytest",
     "pytest-asyncio",
     "pytest-cov",

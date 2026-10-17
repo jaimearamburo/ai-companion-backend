@@ -104,11 +104,13 @@ This file is the project's definition of done. Every item has a permanent ID, a 
 ## EN: Engineering hygiene and presentation
 
 - [ ] **EN-01 A clear layout.** Separate modules for bots, the agent runtime, voice, memory, tools, safety, evals and infra, with typed interfaces between them; the review console lives in the frontend repo (OB-03). *Evidence:* the repo tree in the README.
-- [ ] **EN-02 Modern Python tooling.** uv, ruff, strict type checking (pyright or mypy), pytest and pre-commit hooks. *Evidence:* config files and a clean CI run.
+- [x] **EN-02 Modern Python tooling.** uv, ruff, strict type checking (pyright or mypy), pytest and pre-commit hooks. *Evidence:* config files and a clean CI run.
+  - *Met by:* `pyproject.toml` and `uv.lock` (uv, ruff, mypy strict, pytest), `.pre-commit-config.yaml`, `Makefile`. Proven by `uv run pre-commit run --all-files` and `make lint test` passing, and by the CI `checks` job (S0.2).
 - [ ] **EN-03 One-command run.** Docker Compose plus `make demo`, `make test`, `make lint` and `make eval`. *Evidence:* a fresh clone runs with those commands alone.
 - [ ] **EN-04 Continuous integration.** Lint, types, tests and the fast eval subset on every pull request. *Evidence:* the GitHub Actions workflow.
 - [ ] **EN-05 Decision records.** A short ADR for each significant choice in `docs/adr/`, linked from the checklist IDs it satisfies. *Evidence:* `docs/adr/`.
-- [ ] **EN-06 Secrets handled properly.** Keys only in environment variables, with an `.env.example` and no secrets in git history. *Evidence:* a secret-scanning step in CI.
+- [x] **EN-06 Secrets handled properly.** Keys only in environment variables, with an `.env.example` and no secrets in git history. *Evidence:* a secret-scanning step in CI.
+  - *Met by:* `.env.example`, `SecretStr` settings in `src/companion/config/settings.py`, the gitleaks pre-commit hook, and the CI `secret-scan` job, which scans the full history with `.gitleaks.toml`. Proven by `gitleaks git` finding nothing across all commits (S0.2).
 - [ ] **EN-07 A README that leads with results.** A 60-to-90-second demo video, an architecture diagram, the eval and latency tables, how to run it, and honest limitations. *Evidence:* the README itself.
 - [ ] **EN-08 A write-up.** A short post on how the bots' reliability and memory recall were measured. *Evidence:* the published link.
 
