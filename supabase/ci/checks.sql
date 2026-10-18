@@ -58,30 +58,99 @@ DECLARE
     bob uuid;
     gary uuid;
     paul uuid;
+    gary_v1 uuid;
+    paul_v1 uuid;
     call_id uuid;
     partition_count integer;
 BEGIN
     INSERT INTO public.users (email) VALUES ('alice@example.com') RETURNING id INTO alice;
     INSERT INTO public.users (email) VALUES ('bob@example.com') RETURNING id INTO bob;
-    INSERT INTO public.bots (slug, display_name, persona_prompt, voice_id)
-    VALUES ('gary', 'Gary', 'Warm retired builder.', 'voice-gary') RETURNING id INTO gary;
-    INSERT INTO public.bots (slug, display_name, persona_prompt, voice_id)
-    VALUES ('paul', 'Paul', 'Gentle former teacher.', 'voice-paul') RETURNING id INTO paul;
+    INSERT INTO public.bots (slug, display_name) VALUES ('gary', 'Gary') RETURNING id INTO gary;
+    INSERT INTO public.bots (slug, display_name) VALUES ('paul', 'Paul') RETURNING id INTO paul;
+    INSERT INTO public.bot_versions (bot_id, version, persona_prompt, voices)
+    VALUES (gary, 1, 'Warm retired builder.', '{"fish_s21_hosted": "voice-gary"}')
+    RETURNING id INTO gary_v1;
+    INSERT INTO public.bot_versions (bot_id, version, persona_prompt, voices)
+    VALUES (paul, 1, 'Gentle former teacher.', '{"fish_s21_hosted": "voice-paul"}')
+    RETURNING id INTO paul_v1;
 
     -- Bot slugs are lowercase words joined by hyphens.
     BEGIN
-        INSERT INTO public.bots (slug, display_name, persona_prompt, voice_id)
-        VALUES ('Gary Two', 'Gary 2', 'x', 'v');
+        INSERT INTO public.bots (slug, display_name) VALUES ('Gary Two', 'Gary 2');
         RAISE EXCEPTION 'check failed: an invalid bot slug was accepted';
     EXCEPTION WHEN check_violation THEN NULL;
     END;
 
-    INSERT INTO public.sessions (user_id, livekit_room_name, stt_preset, tts_preset, llm_preset,
-                                 safety_preset, turn_detector_preset, trigger_preset)
-    VALUES (alice, 'room-1', 'deepgram_nova3_au', 'fish_s21_hosted', 'groq_gptoss120b',
+    -- Avatars are served over HTTPS only.
+    BEGIN
+        INSERT INTO public.bots (slug, display_name, avatar_url)
+        VALUES ('anne', 'Anne', 'http://example.com/anne.png');
+        RAISE EXCEPTION 'check failed: a non-HTTPS avatar URL was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+
+    -- A version needs at least one voice, and version numbers start at 1 and
+    -- don't repeat for a bot.
+    BEGIN
+        INSERT INTO public.bot_versions (bot_id, version, persona_prompt, voices)
+        VALUES (gary, 2, 'x', '{}');
+        RAISE EXCEPTION 'check failed: a version without voices was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.bot_versions (bot_id, version, persona_prompt, voices)
+        VALUES (gary, 0, 'x', '{"fish_s21_hosted": "v"}');
+        RAISE EXCEPTION 'check failed: version 0 was accepted';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+    BEGIN
+        INSERT INTO public.bot_versions (bot_id, version, persona_prompt, voices)
+        VALUES (gary, 1, 'x', '{"fish_s21_hosted": "v"}');
+        RAISE EXCEPTION 'check failed: a duplicate version number was accepted';
+    EXCEPTION WHEN unique_violation THEN NULL;
+    END;
+
+    -- Versions are append-only: they can't be edited or deleted.
+    BEGIN
+        UPDATE public.bot_versions SET persona_prompt = 'Changed.' WHERE id = gary_v1;
+        RAISE EXCEPTION 'check failed: a bot version was edited';
+    EXCEPTION WHEN restrict_violation THEN NULL;
+    END;
+    BEGIN
+        DELETE FROM public.bot_versions WHERE id = gary_v1;
+        RAISE EXCEPTION 'check failed: a bot version was deleted';
+    EXCEPTION WHEN restrict_violation THEN NULL;
+    END;
+
+    INSERT INTO public.sessions (user_id, livekit_room_name, region, stt_preset, tts_preset,
+                                 llm_preset, safety_preset, turn_detector_preset, trigger_preset)
+    VALUES (alice, 'room-1', 'au', 'deepgram_nova3_au', 'fish_s21_hosted', 'groq_gptoss120b',
             'groq_safeguard20b', 'livekit_v1_mini', 'auto')
     RETURNING id INTO call_id;
-    INSERT INTO public.session_bots (session_id, bot_id) VALUES (call_id, gary), (call_id, paul);
+    INSERT INTO public.session_bots (session_id, bot_id, bot_version_id)
+    VALUES (call_id, gary, gary_v1), (call_id, paul, paul_v1);
+
+    -- A new session defaults to memory deletion switched off.
+    IF (SELECT memory_deletion_enabled FROM public.sessions WHERE id = call_id) THEN
+        RAISE EXCEPTION 'check failed: memory deletion was on by default';
+    END IF;
+
+    -- Only known regions are accepted.
+    BEGIN
+        INSERT INTO public.sessions (user_id, livekit_room_name, region, stt_preset, tts_preset,
+                                     llm_preset, safety_preset, turn_detector_preset, trigger_preset)
+        VALUES (alice, 'room-eu', 'eu', 'a', 'b', 'c', 'd', 'e', 'f');
+        RAISE EXCEPTION 'check failed: an unknown region was accepted';
+    EXCEPTION WHEN invalid_text_representation THEN NULL;
+    END;
+
+    -- A call can't record another bot's version for a bot.
+    BEGIN
+        UPDATE public.session_bots SET bot_version_id = paul_v1
+        WHERE session_id = call_id AND bot_id = gary;
+        RAISE EXCEPTION 'check failed: a call recorded another bot''s version';
+    EXCEPTION WHEN foreign_key_violation THEN NULL;
+    END;
 
     -- A session's status and end time must agree.
     BEGIN

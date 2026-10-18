@@ -32,7 +32,7 @@ Concretely:
 - `supabase/migrations/` here is the single source of truth. Never apply a schema change from anywhere else. Migrations are applied manually in the Supabase SQL editor; CI first applies them all to a throwaway Postgres and runs behavioural checks (`supabase/ci/`) — see `supabase/README.md`.
 - After any schema change, regenerate and note that the frontend needs `supabase gen types typescript` re-run on its side — tell me explicitly when this happens so I can pass it along, since I can't push that update into the frontend repo myself.
 - If a frontend need surfaces a table/column that doesn't exist yet (I'll relay this from the other repo's Claude Code session, or the developer will tell you directly), draft the migration here — don't assume the shape, ask if it's not obvious from `ARCHITECTURE.md`.
-- Users, accounts, bots, sessions, messages and user–bot relationships are migrated; the memory, reminder and bot-version tables are designed in `ARCHITECTURE.md`'s Database schema section. Schema changes go into that section first, then become a migration here.
+- Users, accounts, bots and bot versions, sessions, messages and user–bot relationships are migrated; the memory and reminder tables are designed in `ARCHITECTURE.md`'s Database schema section. Schema changes go into that section first, then become a migration here.
 ## How I want you to work
 
 1. **Read `ARCHITECTURE.md` and this file before writing code in a new session.** Don't start from assumptions about what the stack is — the spec has already resolved a lot of vendor/design tradeoffs with sourced reasoning. If something in the spec looks wrong or has gone stale, flag it to me in your response rather than quietly working around it.

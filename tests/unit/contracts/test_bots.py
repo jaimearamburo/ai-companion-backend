@@ -12,6 +12,7 @@ from companion.contracts import BotDefinition
 def row(**changes: Any) -> dict[str, Any]:
     data: dict[str, Any] = {
         "id": uuid4(),
+        "version_id": uuid4(),
         "version": 1,
         "slug": "gary",
         "display_name": "Gary",

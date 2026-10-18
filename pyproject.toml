@@ -8,6 +8,7 @@ description = "Real-time voice pipeline for the Voice Companion (LiveKit Agents 
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "psycopg[binary]>=3.3.6",
     "pydantic-settings>=2.15.0",
     "structlog>=26.1.0",
 ]
@@ -100,6 +101,7 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 # --cov measures which lines of the package ran during the tests (see [tool.coverage] below).
 addopts = "-ra --strict-markers --cov"
+markers = ["db: needs a Postgres database with the migrations applied (TEST_DATABASE_URL)"]
 
 # ---------------------------------------------------------------------------
 # coverage: which lines and branches the tests actually executed (via pytest-cov).

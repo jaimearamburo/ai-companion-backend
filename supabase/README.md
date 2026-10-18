@@ -31,4 +31,8 @@ SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version
 | File | What it does |
 |---|---|
 | `20260930065124_create_users_and_accounts.sql` | `users` and `accounts` for Auth.js (custom adapter): lowercase-only emails, `updated_at` trigger, RLS on, API-role grants revoked |
-| `20260930073542_create_bots_sessions_messages.sql` | `bots`, `sessions`, `session_bots`, `messages` (16 hash partitions), `user_bot_relationships`; same-user composite references; RLS on everywhere |
+| `20260930073542_create_bots_sessions_messages.sql` | `bots`, append-only `bot_versions`, `sessions` (with region and the memory-deletion toggle), `session_bots` (with the bot version used), `messages` (16 hash partitions), `user_bot_relationships`; same-user composite references; RLS on everywhere |
+
+## Seed data
+
+`seed.sql` adds two clearly marked placeholder bots, each with a first version, so a call can run before the real roster exists. Apply it by hand in the SQL editor **after** the migrations. It is safe to run more than once: existing rows are left alone. CI applies it twice to prove that. Replace the placeholders with real characters and voices before anyone else uses the app.

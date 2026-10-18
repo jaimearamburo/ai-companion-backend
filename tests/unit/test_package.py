@@ -7,6 +7,7 @@ import pytest
 MODULES = [
     "companion",
     "companion.audio",
+    "companion.bots",
     "companion.config",
     "companion.contracts",
     "companion.dispatch",

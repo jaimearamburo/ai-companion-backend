@@ -17,6 +17,12 @@ Things about this repo's environment that the code and other docs don't make obv
 - **The secret scan covers the full history** with a checksum-verified gitleaks release. Narrow exceptions live in `.gitleaks.toml`; add one only for a confirmed false positive, as specific as possible.
 - **`supabase/ci/checks.sql` lists the migration versions** in its final block. Every new migration must add its version there, plus its own behavioural checks.
 
+## Database tests
+
+- **Tests marked `db` need a real Postgres** with the migrations applied, given as `TEST_DATABASE_URL`; without it they are skipped. CI's migrations job applies the migrations and the seed to a throwaway Postgres 17 and runs `uv run pytest -m db`.
+- **Each test runs in a transaction that is rolled back,** so tests never see each other's rows and the database is left as it was.
+- **Locally,** point `TEST_DATABASE_URL` at any disposable Postgres 16+ with pgvector, apply `supabase/ci/apply_migrations.sh` to it, then run `uv run pytest -m db`. Never point it at the real Supabase project.
+
 ## Migrations
 
 - **Applied by hand, never by tooling.** Each file is pasted into the Supabase SQL editor, in filename order. Never point `supabase/ci/apply_migrations.sh` or any script at the real database.

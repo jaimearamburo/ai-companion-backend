@@ -1,11 +1,11 @@
-# `dispatch/` — Dispatch
+# `dispatch/` — Call-start checks
 
-Turns the JSON the frontend sends at call start (`ctx.job.metadata`) into a validated, typed object: user's id, selected bots, and preset names.
+Decides whether a call may start. The frontend's dispatch metadata is parsed by `DispatchMetadata` (`contracts/`); `prepare_session` then checks it against the database: the user exists, a regular user has at most two bots (admins have no limit), and every bot exists, has a version, is active and has a valid stored definition.
 
-**Owns:** the backend side of the dispatch-metadata contract; rejecting malformed metadata; the bot-count check against the user's role (max 2 for regular users).
+**Owns:** the session-start rules and their rejection reasons (`unknown_user`, `too_many_bots`, `unknown_bot`, `inactive_bot`, `invalid_bot`), logged on every rejection.
 
-**Does not own:** resolving preset names into real providers (`providers/`).
+**Does not own:** the metadata's shape (`contracts/`), loading bot rows (`bots/`), or resolving preset names into providers (`providers/`).
 
 **Spec:** ARCHITECTURE.md → "Frontend contract", "Pluggable providers".
 
-**Status:** not yet implemented.
+**Status:** implemented (S1.2).

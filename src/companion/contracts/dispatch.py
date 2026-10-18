@@ -8,6 +8,8 @@ from pydantic import Field, model_validator
 from companion.contracts._base import Contract, PresetName, Seq, has_duplicates
 
 type Region = Literal["au", "us"]
+# Matches the user_role enum: admins (developers) may put any number of bots in a call.
+type UserRole = Literal["admin", "user"]
 
 
 class Presets(Contract):

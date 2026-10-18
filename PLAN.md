@@ -66,7 +66,7 @@ Decision records in [docs/adr/](docs/adr/): D1 in 0007 and D40 in 0008; D3, D4 a
 | D16 | Evals use free tiers first, under spend caps per run and per month; the numbers are set when evals are first run. | 2026-10-18 |
 | D17 | The review console is an admin area in the frontend repo, reusing its login and admin role. | 2026-10-18 |
 | D18 | TASK_BREAKDOWN.md is retired; see D36 for removing all other plan documents. | 2026-10-18 |
-| D19 | The maintainer makes every commit by hand; each step ends with a suggested commit message. | 2026-10-17 |
+| D19 | Each batch ends with a suggested commit message; a commit is made only after the maintainer approves that specific commit, and nothing is pushed unless asked. | 2026-10-18 |
 | D20 | The extraction job is started from a queue in the Sydney Redis, so a failed run retries. | 2026-10-18 |
 | D21 | Paid services only for live-call layers (transport, worker compute, STT, turn detection, scriptwriter and safety LLMs, TTS). Everything else in Sydney on free or self-hosted options where possible. | 2026-10-17 |
 | D22 | No vendor is fixed for any layer. Each is chosen by measured latency when its layer is built, preferring in-region inference in Australia and the US. | 2026-10-17 |
@@ -275,7 +275,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 3. Run `make lint`, `make test` and `make eval` (once it exists) and report results.
 4. Finish with a checklist report: IDs newly met with evidence, IDs regressed, IDs made easier.
 5. Update the "Met by" lines; never renumber IDs; never mark an item met without a test or runnable command.
-6. Stop with a suggested commit message. Jaime reviews and commits every change himself.
+6. Stop with a suggested commit message; commit only after the maintainer approves that commit, and push only when asked.
 
 ## 8. Sources
 

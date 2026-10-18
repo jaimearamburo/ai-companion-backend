@@ -32,6 +32,8 @@ class BotDefinition(Contract):
     """One version of one bot. Edits create a new version; old ones never change."""
 
     id: UUID
+    # The bot_versions row: releases and session_bots pin this ID.
+    version_id: UUID
     version: int = Field(ge=1)
     slug: BotSlug
     display_name: Annotated[Text, StringConstraints(max_length=60)]

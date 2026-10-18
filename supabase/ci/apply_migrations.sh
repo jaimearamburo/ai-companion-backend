@@ -17,6 +17,15 @@ for file in migrations/*.sql; do
     psql -v ON_ERROR_STOP=1 --quiet --file "$file"
 done
 
+# The seed must apply cleanly, and applying it twice must change nothing.
+echo "Applying seed.sql (twice)"
+psql -v ON_ERROR_STOP=1 --quiet --file seed.sql
+psql -v ON_ERROR_STOP=1 --quiet --file seed.sql
+if [ "$(psql --tuples-only --no-align -c "SELECT count(*) FROM public.bot_versions")" != "2" ]; then
+    echo "seed.sql is not idempotent" >&2
+    exit 1
+fi
+
 echo "Running schema checks"
 psql -v ON_ERROR_STOP=1 --quiet --file ci/checks.sql
 echo "All migrations applied and all checks passed"
