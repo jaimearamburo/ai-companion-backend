@@ -1,0 +1,124 @@
+# Every provider preset the registry knows. Vendor details (endpoints, model IDs,
+# which credential to use) live only here. A preset is chosen per call in the
+# dispatch metadata, or by default from a region profile (regions.toml).
+#
+# Candidates, not commitments: each layer's vendor is chosen by comparing cost and
+# measured latency when that layer is built (PLAN.md D22).
+
+# --- Speech to text ------------------------------------------------------------
+[presets.deepgram_nova3_au]
+kind = "stt"
+vendor = "deepgram"
+model = "nova-3"
+endpoint = "https://api.au.deepgram.com"
+credential = "deepgram"
+emits_preflight = true
+
+[presets.deepgram_flux_au]
+kind = "stt"
+vendor = "deepgram"
+model = "flux-general-en"
+endpoint = "https://api.au.deepgram.com"
+credential = "deepgram"
+emits_preflight = true
+reports_end_of_turn = true
+
+[presets.deepgram_nova3_global]
+kind = "stt"
+vendor = "deepgram"
+model = "nova-3"
+endpoint = "https://api.deepgram.com"
+credential = "deepgram"
+emits_preflight = true
+
+[presets.inworld_stt1]
+kind = "stt"
+vendor = "inworld"
+model = "inworld-stt-1"
+credential = "inworld"
+reports_end_of_turn = true
+
+# --- Text to speech ------------------------------------------------------------
+[presets.fish_s21_hosted]
+kind = "tts"
+vendor = "fish"
+model = "s2.1-pro"
+endpoint = "https://api.fish.audio"
+credential = "fish"
+
+[presets.deepgram_aura2_au]
+kind = "tts"
+vendor = "deepgram"
+model = "aura-2"
+endpoint = "https://api.au.deepgram.com"
+credential = "deepgram"
+
+# --- Scriptwriter LLM ----------------------------------------------------------
+[presets.groq_gptoss120b]
+kind = "llm"
+vendor = "groq"
+model = "openai/gpt-oss-120b"
+endpoint = "https://api.groq.com/openai/v1"
+credential = "groq"
+
+[presets.bedrock_gptoss120b_syd]
+kind = "llm"
+vendor = "bedrock"
+model = "openai.gpt-oss-120b-1:0"
+endpoint = "https://bedrock-runtime.ap-southeast-2.amazonaws.com/openai/v1"
+credential = "bedrock"
+
+[presets.bedrock_gptoss120b_use1]
+kind = "llm"
+vendor = "bedrock"
+model = "openai.gpt-oss-120b-1:0"
+endpoint = "https://bedrock-runtime.us-east-1.amazonaws.com/openai/v1"
+credential = "bedrock"
+
+# --- Safety model --------------------------------------------------------------
+[presets.groq_safeguard20b]
+kind = "safety"
+vendor = "groq"
+model = "openai/gpt-oss-safeguard-20b"
+endpoint = "https://api.groq.com/openai/v1"
+credential = "groq"
+
+[presets.bedrock_safeguard20b_syd]
+kind = "safety"
+vendor = "bedrock"
+model = "openai.gpt-oss-safeguard-20b"
+endpoint = "https://bedrock-runtime.ap-southeast-2.amazonaws.com/openai/v1"
+credential = "bedrock"
+
+# --- Turn detection --------------------------------------------------------------
+[presets.livekit_v1_mini]
+kind = "turn_detector"
+vendor = "livekit"
+model = "v1-mini"
+
+# Uses the STT's own end-of-turn signal; only valid with an STT that reports one.
+[presets.stt_native]
+kind = "turn_detector"
+vendor = "stt"
+
+# --- Speculative trigger (when to start drafting early) ---------------------------
+# "auto" resolves per STT at session start; see catalog.resolve_trigger.
+[presets.auto]
+kind = "speculative_trigger"
+vendor = "companion"
+
+[presets.livekit_preemptive]
+kind = "speculative_trigger"
+vendor = "livekit"
+
+[presets.transcript_rules]
+kind = "speculative_trigger"
+vendor = "companion"
+
+[presets.transcript_debounce_only]
+kind = "speculative_trigger"
+vendor = "companion"
+
+[presets.vad_silence]
+kind = "speculative_trigger"
+vendor = "companion"

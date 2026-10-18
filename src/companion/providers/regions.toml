@@ -1,0 +1,29 @@
+# One profile per region: the default preset for every live-call layer, and where
+# the region's workers run. Everything off the live call (MCP server, database,
+# cache, post-call jobs) is in Sydney for every region (PLAN.md D12, D21).
+#
+# Defaults are provisional until the measurement run in plan step S2.3.
+
+[regions.au]
+agent_name = "companion-au"
+aws_region = "ap-southeast-2"
+stt = "deepgram_nova3_au"
+tts = "fish_s21_hosted"
+llm = { primary = "bedrock_gptoss120b_syd", fallback = "groq_gptoss120b" }
+safety = { primary = "groq_safeguard20b", fallback = "bedrock_safeguard20b_syd" }
+turn_detector = "livekit_v1_mini"
+speculative_trigger = "auto"
+shared_services_aws_region = "ap-southeast-2"
+
+[regions.us]
+agent_name = "companion-us"
+# us-east-1 or us-west-2, decided by measurement (PLAN.md D25).
+aws_region = "us-east-1"
+stt = "deepgram_nova3_global"
+tts = "fish_s21_hosted"
+llm = { primary = "bedrock_gptoss120b_use1", fallback = "groq_gptoss120b" }
+# No US fallback yet: Bedrock's safeguard model in US regions is unconfirmed.
+safety = { primary = "groq_safeguard20b" }
+turn_detector = "livekit_v1_mini"
+speculative_trigger = "auto"
+shared_services_aws_region = "ap-southeast-2"

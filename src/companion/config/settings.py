@@ -15,12 +15,17 @@ provider registry checks them when a call selects a preset that needs them.
 import re
 from enum import StrEnum
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 
 from pydantic import SecretStr, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from companion.contracts.dispatch import Region
+
 DEFAULT_ENV_FILE = Path(".env")
+
+# Vendors whose API key a provider preset may need.
+type Credential = Literal["deepgram", "fish", "groq", "bedrock", "inworld"]
 
 
 class Environment(StrEnum):
@@ -79,19 +84,24 @@ class Settings(BaseSettings):
     livekit_url: str
     livekit_api_key: SecretStr
     livekit_api_secret: SecretStr
-    deepgram_api_key: SecretStr
-    # Text-to-speech: Fish Audio's hosted API.
-    fish_api_key: SecretStr
-    # LLM hosts for the scriptwriter and safety models.
-    groq_api_key: SecretStr
-    bedrock_api_key: SecretStr
-    bedrock_region: str
     # Connection URLs usually embed a password, so they're treated as secrets too.
     redis_url: SecretStr
     supabase_db_url: SecretStr
 
-    # --- Optional: only needed by some provider presets ----------------------
+    # The region profile this worker serves (ARCHITECTURE.md -> Regions).
+    worker_region: Region = "au"
+
+    # --- Vendor keys -------------------------------------------------------------
+    # Optional here: no vendor is fixed, so the provider registry requires only the
+    # keys the worker's region profile uses, and rejects a call whose presets need
+    # a key that isn't set.
+    deepgram_api_key: SecretStr | None = None
+    fish_api_key: SecretStr | None = None
+    groq_api_key: SecretStr | None = None
+    bedrock_api_key: SecretStr | None = None
     inworld_api_key: SecretStr | None = None
+    # Bedrock presets carry their own region; this one is for the latency probe.
+    bedrock_region: str = "ap-southeast-2"
 
     # Accept any casing in the environment (LOG_LEVEL=info, ENVIRONMENT=Production).
     @field_validator("log_level", mode="before")
@@ -99,7 +109,7 @@ class Settings(BaseSettings):
     def _uppercase(cls, value: object) -> object:
         return value.strip().upper() if isinstance(value, str) else value
 
-    @field_validator("environment", "log_format", mode="before")
+    @field_validator("environment", "log_format", "worker_region", mode="before")
     @classmethod
     def _lowercase(cls, value: object) -> object:
         return value.strip().lower() if isinstance(value, str) else value
@@ -141,6 +151,17 @@ class Settings(BaseSettings):
         if self.environment is Environment.PRODUCTION and self.log_level is LogLevel.DEBUG:
             raise ValueError("LOG_LEVEL=DEBUG is not allowed when ENVIRONMENT=production")
         return self
+
+    def api_key(self, credential: Credential) -> SecretStr | None:
+        """The configured key for a vendor credential, or None if it isn't set."""
+        keys: dict[Credential, SecretStr | None] = {
+            "deepgram": self.deepgram_api_key,
+            "fish": self.fish_api_key,
+            "groq": self.groq_api_key,
+            "bedrock": self.bedrock_api_key,
+            "inworld": self.inworld_api_key,
+        }
+        return keys[credential]
 
     @property
     def use_json_logs(self) -> bool:

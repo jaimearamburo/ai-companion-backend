@@ -26,14 +26,14 @@ Things about this repo's environment that the code and other docs don't make obv
 ## Migrations
 
 - **Applied deliberately, never automatically.** Each file is run against the real database one at a time, in filename order, by the maintainer in the Supabase SQL editor or at the maintainer's explicit request. Never point `supabase/ci/apply_migrations.sh` at the real database, and never apply migrations from CI.
-- **Applied so far:** `20260930065124`, `20260930073542` and `seed.sql` (2026-10-18). Not yet applied: `20261018023000`.
+- **Applied so far:** `20260930065124`, `20260930073542`, `seed.sql` and `20261018023000` (2026-10-18).
 - **Each file is one transaction** (`BEGIN; … COMMIT;`) and records itself in `supabase_migrations.schema_migrations`, so the Supabase CLI would recognise it if adopted later.
 - **Never edit a migration once it has been applied** to the real database; write a new one.
 - **The CI bootstrap mimics Supabase's defaults.** `supabase/ci/bootstrap.sql` creates `anon`, `authenticated` and `service_role` and grants them access to new tables, so the migrations' `REVOKE` statements are actually tested. A new table, or partition, without `REVOKE` and `ENABLE ROW LEVEL SECURITY` fails CI.
 
 ## Environment variables and secrets
 
-- **Required and optional variables** are listed in `.env.example` and enforced by `src/companion/config/settings.py`.
+- **Required and optional variables** are listed in `.env.example` and enforced by `src/companion/config/settings.py`. Vendor keys are checked against the worker's region profile (`WORKER_REGION`) by the provider registry, which names every missing variable.
 - **Empty means unset:** `KEY=` counts as missing.
 - **Unrelated variables are ignored** (`extra="ignore"`), so `.env` can also hold experiment-only keys such as `MODAL_LLM_URL` and `MODAL_LLM_API_KEY`.
 - **Quoted values** in `.env` are fine for pydantic-settings; any hand-written check that reads the file must strip the quotes first.

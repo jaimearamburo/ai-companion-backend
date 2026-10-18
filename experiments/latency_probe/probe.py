@@ -39,7 +39,7 @@ import redis.asyncio as redis_async
 from openai import APIStatusError, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from companion.config import Settings, load_settings
+from companion.config import Credential, Settings, load_settings
 
 REPEATS = 7  # timed repetitions per measurement, after one untimed warm-up
 TIMEOUT_S = 30.0  # upper bound for any single operation
@@ -57,6 +57,14 @@ FISH_TTS_URL = "https://api.fish.audio/v1/tts"
 FISH_MODEL = "s2.1-pro-free"  # the free hosted S2.1 model (free until 30 Nov 2026)
 FISH_VOICE = "933563129e564b19a115bedd57b7406a"  # default voice of LiveKit's Fish plugin
 FISH_LINE = "That sounds lovely, mate. How long is your sister staying?"
+
+
+def require_key(settings: Settings, credential: Credential) -> str:
+    """The vendor key this experiment needs; exits with the variable name if it isn't set."""
+    key = settings.api_key(credential)
+    if key is None:
+        raise SystemExit(f"Set {credential.upper()}_API_KEY to run this experiment.")
+    return key.get_secret_value()
 
 
 @dataclass
@@ -315,8 +323,8 @@ async def main() -> None:
     # 2. LLMs: both models on both hosts.
     groq_url = "https://api.groq.com/openai/v1"
     bedrock_url = f"https://{bedrock_host}/openai/v1"
-    groq_key = settings.groq_api_key.get_secret_value()
-    bedrock_key = settings.bedrock_api_key.get_secret_value()
+    groq_key = require_key(settings, "groq")
+    bedrock_key = require_key(settings, "bedrock")
     targets = [
         LlmTarget("Groq gpt-oss-120b", groq_url, groq_key, "openai/gpt-oss-120b", SCRIPT_SYSTEM),
         LlmTarget(
@@ -368,7 +376,7 @@ async def main() -> None:
 
     # 3. Deepgram, Australian vs global endpoint.
     audio = one_second_tone_wav()
-    deepgram_key = settings.deepgram_api_key.get_secret_value()
+    deepgram_key = require_key(settings, "deepgram")
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as http:
         for label, base in (
             ("Australian", "https://api.au.deepgram.com"),
@@ -382,7 +390,7 @@ async def main() -> None:
             )
 
     # 3b. Fish TTS, at two of its speed/quality settings.
-    fish_key = settings.fish_api_key.get_secret_value()
+    fish_key = require_key(settings, "fish")
     async with httpx.AsyncClient(timeout=TIMEOUT_S) as http:
         for latency_mode in ("low", "balanced"):
             edges: set[str] = set()

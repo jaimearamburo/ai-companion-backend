@@ -20,8 +20,10 @@ Call `load_settings()` once at worker startup and pass the object (or the values
 ## Rules
 
 - **Sources:** real environment variables, plus a local `.env` file if present (development only). Real environment variables win over the file. `KEY=` with no value counts as not set.
-- **Required** (the worker won't start without them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `DEEPGRAM_API_KEY`, `FISH_API_KEY`, `GROQ_API_KEY`, `BEDROCK_API_KEY`, `BEDROCK_REGION` (validated as an AWS region code), `REDIS_URL`, `SUPABASE_DB_URL`. Groq and Bedrock are both required: Groq is the primary LLM host and Bedrock its automatic fallback.
-- **Optional, checked per preset:** keys only some provider presets use (currently `INWORLD_API_KEY`) may be unset here; the provider registry rejects a call that selects a preset needing a missing key.
+- **Required** (the worker won't start without them): `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `REDIS_URL`, `SUPABASE_DB_URL`.
+- **Worker region:** `WORKER_REGION` (`au` or `us`, default `au`) picks the region profile this worker serves.
+- **Vendor keys are optional here:** `DEEPGRAM_API_KEY`, `FISH_API_KEY`, `GROQ_API_KEY`, `BEDROCK_API_KEY`, `INWORLD_API_KEY`. No vendor is fixed, so the provider registry (`providers/`) requires only the keys the worker's region profile uses, and rejects a call whose presets need a key that isn't set. `Settings.api_key(...)` returns a key by vendor.
+- **`BEDROCK_REGION`** (default `ap-southeast-2`) is used only by the latency probe; Bedrock presets carry their own region.
 - **Secrets** are `SecretStr` — hidden when printed or logged. Connection URLs are secrets too (they embed passwords).
 - **Error messages** name the variable and the problem, never the value.
 - **Runtime behaviour:** `ENVIRONMENT` (`development` | `production`), `LOG_LEVEL` (`DEBUG` | `INFO` | `WARNING` | `ERROR`), `LOG_FORMAT` (`auto` | `console` | `json`; `auto` = console in development, JSON in production). `LOG_LEVEL=DEBUG` is refused in production, because DEBUG is the only level allowed to contain what users said.

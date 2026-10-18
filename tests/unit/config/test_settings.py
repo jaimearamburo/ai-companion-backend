@@ -12,23 +12,27 @@ from companion.config import (
     load_settings,
 )
 
-# A complete, valid set of required variables. Values are obviously fake.
-VALID_ENV = {
+# The required variables, plus the vendor keys most tests use. Values are obviously fake.
+REQUIRED_ENV = {
     "LIVEKIT_URL": "wss://example.livekit.cloud",
     "LIVEKIT_API_KEY": "lk-key",
     "LIVEKIT_API_SECRET": "lk-secret-value",
+    "REDIS_URL": "rediss://default:redis-password@example.upstash.io:6379",
+    "SUPABASE_DB_URL": "postgresql://postgres:db-password@example.supabase.com:5432/postgres",
+}
+VENDOR_ENV = {
     "DEEPGRAM_API_KEY": "deepgram-key",
     "FISH_API_KEY": "fish-key",
     "GROQ_API_KEY": "groq-key",
     "BEDROCK_API_KEY": "bedrock-key",
-    "BEDROCK_REGION": "ap-southeast-2",
-    "REDIS_URL": "rediss://default:redis-password@example.upstash.io:6379",
-    "SUPABASE_DB_URL": "postgresql://postgres:db-password@example.supabase.com:5432/postgres",
 }
+VALID_ENV = {**REQUIRED_ENV, **VENDOR_ENV}
 
 SETTINGS_VARIABLES = [
     *VALID_ENV,
     "INWORLD_API_KEY",
+    "BEDROCK_REGION",
+    "WORKER_REGION",
     "ENVIRONMENT",
     "LOG_LEVEL",
     "LOG_FORMAT",
@@ -59,8 +63,9 @@ def test_loads_valid_settings_with_defaults(monkeypatch: pytest.MonkeyPatch) -> 
     settings = load_settings(env_file=None)
 
     assert settings.livekit_url == "wss://example.livekit.cloud"
-    assert settings.groq_api_key.get_secret_value() == "groq-key"
+    assert settings.api_key("groq") is not None
     assert settings.environment is Environment.DEVELOPMENT
+    assert settings.worker_region == "au"
     assert settings.log_level is LogLevel.INFO
     assert settings.log_format is LogFormat.AUTO
     assert settings.bedrock_region == "ap-southeast-2"
@@ -87,29 +92,62 @@ def test_secrets_are_hidden_when_printed(monkeypatch: pytest.MonkeyPatch) -> Non
 
 def test_missing_required_variables_are_all_named(monkeypatch: pytest.MonkeyPatch) -> None:
     set_env(monkeypatch)
-    monkeypatch.delenv("GROQ_API_KEY")
+    monkeypatch.delenv("LIVEKIT_API_KEY")
     monkeypatch.delenv("REDIS_URL")
 
     with pytest.raises(ConfigurationError) as caught:
         load_settings(env_file=None)
 
     message = str(caught.value)
-    assert "GROQ_API_KEY: is not set" in message
+    assert "LIVEKIT_API_KEY: is not set" in message
     assert "REDIS_URL: is not set" in message
 
 
 def test_empty_value_counts_as_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A blank line copied from .env.example ("GROQ_API_KEY=") must not pass as "".
-    set_env(monkeypatch, GROQ_API_KEY="")
+    # A blank line copied from .env.example ("LIVEKIT_API_SECRET=") must not pass as "".
+    set_env(monkeypatch, LIVEKIT_API_SECRET="")
 
-    with pytest.raises(ConfigurationError, match="GROQ_API_KEY: is not set"):
+    with pytest.raises(ConfigurationError, match="LIVEKIT_API_SECRET: is not set"):
         load_settings(env_file=None)
 
 
-def test_empty_optional_key_is_none(monkeypatch: pytest.MonkeyPatch) -> None:
-    set_env(monkeypatch, INWORLD_API_KEY="")
+def test_vendor_keys_are_optional(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Which vendor keys a worker needs depends on its region profile, checked by the
+    # provider registry, so none are required here.
+    for name, value in REQUIRED_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("GROQ_API_KEY", "")
 
-    assert load_settings(env_file=None).inworld_api_key is None
+    settings = load_settings(env_file=None)
+
+    for credential in ("deepgram", "fish", "groq", "bedrock", "inworld"):
+        assert settings.api_key(credential) is None
+
+
+def test_api_key_returns_each_vendor_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    set_env(monkeypatch, INWORLD_API_KEY="inworld-key")
+    settings = load_settings(env_file=None)
+
+    keys = {c: settings.api_key(c) for c in ("deepgram", "fish", "groq", "bedrock", "inworld")}
+
+    assert {c: k.get_secret_value() if k else None for c, k in keys.items()} == {
+        "deepgram": "deepgram-key",
+        "fish": "fish-key",
+        "groq": "groq-key",
+        "bedrock": "bedrock-key",
+        "inworld": "inworld-key",
+    }
+
+
+def test_worker_region_accepts_any_casing_and_rejects_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    set_env(monkeypatch, WORKER_REGION="US")
+    assert load_settings(env_file=None).worker_region == "us"
+
+    set_env(monkeypatch, WORKER_REGION="eu")
+    with pytest.raises(ConfigurationError, match="WORKER_REGION"):
+        load_settings(env_file=None)
 
 
 @pytest.mark.parametrize(
@@ -186,8 +224,11 @@ def test_reads_env_file_and_real_variables_win(
 
     settings = load_settings(env_file=env_file)
 
-    assert settings.groq_api_key.get_secret_value() == "from-file"
-    assert settings.deepgram_api_key.get_secret_value() == "from-environment"
+    groq, deepgram = settings.api_key("groq"), settings.api_key("deepgram")
+    assert groq is not None
+    assert groq.get_secret_value() == "from-file"
+    assert deepgram is not None
+    assert deepgram.get_secret_value() == "from-environment"
 
 
 def test_missing_env_file_is_fine(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -196,4 +237,4 @@ def test_missing_env_file_is_fine(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
 
     settings = load_settings(env_file=tmp_path / "does-not-exist.env")
 
-    assert settings.groq_api_key.get_secret_value() == "groq-key"
+    assert settings.livekit_url == "wss://example.livekit.cloud"

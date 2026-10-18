@@ -89,6 +89,7 @@ Decision records in [docs/adr/](docs/adr/): D1 in 0007, D40 in 0008 and D41 in 0
 | D39 | Code comments explain why, not what the language does. Language and library explanations for the maintainer go in private learning notes and in chat, never in committed code. Existing tutorial-style comments are tidied in S0. | 2026-10-18 |
 | D40 | Bots carry a voice per TTS preset, not a model per role; models per role belong to the region profile, because one scriptwriter request voices every bot in the call. | 2026-10-18 |
 | D41 | No table partitioning until volume needs it; `messages` becomes a plain table (S1.3) and memories are designed unpartitioned. Same-user composite references stay. Trigger and path in ADR 0009. | 2026-10-18 |
+| D42 | Add a `get_weather(place, day)` tool for anywhere in the world (S20.3); Open-Meteo is the first candidate (free, no key; non-commercial only, attribution required). No web or news search for now. | 2026-10-18 |
 
 ### 3.2 Open
 
@@ -174,11 +175,12 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - **Done when:** the red-team report exists.
 - **Effort:** M.
 
-### S20 — Reminders (numbered last to keep other step numbers stable)
-- **IDs:** MT-13, MT-05, EV-02
+### S20 — Actions: reminders and weather (numbered last to keep other step numbers stable)
+- **IDs:** MT-13, MT-05, MT-06, EV-02, RL-01
 - **Work:** A `reminders` table in Sydney. MCP tools to create and list reminders, with policies enforced in code: read the date and time back and get a yes before saving; resolve dates in the user's time zone; reject dates in the past. Bots bring up due reminders in the next call. Eval scenarios scored on the reminders that exist afterwards.
-- **Done when:** each policy has a test and eval scenarios pass on end state.
-- **Effort:** M. **Frontend:** regenerate Supabase types; a reminders list later.
+- **Weather (S20.3, D42):** a `get_weather(place, day)` tool that resolves a place name worldwide and returns a short forecast, with a timeout, a brief cache, and an honest "couldn't find that place" or "weather unavailable" result instead of a guess. Provider chosen by comparing cost and measured latency; Open-Meteo first.
+- **Done when:** each reminder policy has a test, eval scenarios pass on end state, and the weather tool is tested against recorded responses with an eval that checks the bot reports the forecast instead of inventing one.
+- **Effort:** M, three batches. **Frontend:** regenerate Supabase types; a reminders list later; Open-Meteo attribution if it's chosen.
 
 ### S10 — Tracing and the latency and cost report
 - **IDs:** OB-01, OB-02, OB-04, VO-01, AR-04, AR-09
@@ -235,7 +237,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - **Work:** Docker Compose (worker, MCP server, Redis, Postgres with pgvector) and `make demo` (text mode needs only an LLM key). A README that leads with a short demo video, an architecture diagram, eval and latency tables, how to run it, and honest limitations. A short write-up on how reliability and recall were measured.
 - **Effort:** M.
 
-**Total:** 39 tickets. At two to four batches reviewed a day, that is roughly two to four weeks. Work that cannot be compressed sits alongside it and may set the real pace:
+**Total:** 40 tickets. At two to four batches reviewed a day, that is roughly two to four weeks. Work that cannot be compressed sits alongside it and may set the real pace:
 
 - the open decisions in section 3.2, the real bot roster, the fixed safety wording and the voice listening test;
 - hand-labelling 20–30 conversations for the judge (S16);
@@ -267,6 +269,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - Dispatch to the regional agent name, and add `region` and the memory-deletion setting (D38) to the dispatch metadata.
 - Show a countdown from the `call_ends_at` event (S14).
 - Host the review console in the admin area (S18), and later a reminders list (S20).
+- Show weather data attribution ("Weather data by Open-Meteo.com") in the app if Open-Meteo is the chosen provider (S20.3).
 - Regenerate Supabase types after every migration (S1, S6, S8, S20).
 - Copy the updated ARCHITECTURE.md once S0 fixes the stale sections.
 

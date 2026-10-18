@@ -30,7 +30,7 @@ from dotenv import dotenv_values
 from openai import APIStatusError, AsyncOpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from companion.config import load_settings
+from companion.config import Settings, load_settings
 
 REPEATS = 10
 PAUSE_S = 3.0  # spacing between requests, to stay under Groq's rate limits
@@ -80,6 +80,14 @@ def has_reasoning(delta: object) -> bool:
     """Reasoning arrives under non-standard field names, kept in model_extra."""
     extra = getattr(delta, "model_extra", None) or {}
     return any(extra.get(name) for name in ("reasoning", "reasoning_content"))
+
+
+def require_key(settings: Settings) -> str:
+    """The Groq key this experiment needs; exits with the variable name if it isn't set."""
+    key = settings.groq_api_key
+    if key is None:
+        raise SystemExit("Set GROQ_API_KEY to run this experiment.")
+    return key.get_secret_value()
 
 
 async def one_request(
@@ -173,7 +181,7 @@ async def main() -> None:
         AsyncOpenAI(base_url=f"{modal_url}/v1", api_key=modal_key, max_retries=0) as modal,
         AsyncOpenAI(
             base_url="https://api.groq.com/openai/v1",
-            api_key=settings.groq_api_key.get_secret_value(),
+            api_key=require_key(settings),
             max_retries=0,
         ) as groq,
     ):

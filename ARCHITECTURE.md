@@ -68,7 +68,7 @@ In development, everything runs on one machine and the agent runtime starts the 
 | Call the LLM, with fallback | **Agent runtime** | Primary and fallback hosts per region; switch on rate limit, server error or no first token in time; reply streamed back to LiveKit |
 | Run the tool loop | **Agent runtime** | Gives the LLM the tool schemas, forwards its tool calls to the MCP server, enforces the per-turn limit and timeouts |
 | Screen user input, fixed wording | **Agent runtime** | Fails closed. Output screening is a pluggable stage, off by default |
-| Expose tools (recall, list and forget memories; ask another bot after consent; create and list reminders) | **MCP server** | Never talks to the LLM and never decides when a tool is used |
+| Expose tools (recall, list and forget memories; ask another bot after consent; create and list reminders; weather) | **MCP server** | Never talks to the LLM and never decides when a tool is used |
 | Decide whose data a tool may see | **MCP server** | Scope comes from the signed session token, never from the model |
 | Embed queries and search memories | **MCP server** | Embedding model loaded once; pgvector in Postgres |
 | Write new memories after the call | **Extraction job** | Uses the same memory code as the MCP server; not called by the LLM |
@@ -135,7 +135,7 @@ These are the options found for each layer, not choices.
 
 Every external endpoint (STT, TTS, the scriptwriter and safety LLMs, the turn detector and the speculative-trigger strategy) is swappable without code changes. Comparing provider combinations is an ongoing part of building this, not a one-time choice.
 
-A provider registry maps preset names (for example `deepgram_nova3_au`, `fish_s21_hosted`, `bedrock_gptoss120b_syd`) to configured LiveKit plugin or client instances (auth, model, region). Each region profile names its default presets. A test UI in the frontend exposes the presets as dropdowns, resolved server-side into preset names and sent to the worker in the **agent-dispatch metadata** at session start (`createDispatch(...)`, read back from `ctx.job.metadata`). Presets are chosen per session, never swapped mid-call, except for the automatic fallback of a single failed LLM request described below.
+A provider registry maps preset names (for example `deepgram_nova3_au`, `fish_s21_hosted`, `bedrock_gptoss120b_syd`) to configured LiveKit plugin or client instances (auth, model, region). The catalogue lives in `src/companion/providers/presets.toml` and the region profiles in `regions.toml`; both are validated together at startup, and a worker requires only the vendor keys its own region profile uses. Each region profile names its default presets. A test UI in the frontend exposes the presets as dropdowns, resolved server-side into preset names and sent to the worker in the **agent-dispatch metadata** at session start (`createDispatch(...)`, read back from `ctx.job.metadata`). Presets are chosen per session, never swapped mid-call, except for the automatic fallback of a single failed LLM request described below.
 
 **Per-call selectable presets** (names are provisional; the registry is the source of truth):
 
@@ -153,7 +153,7 @@ A provider registry maps preset names (for example `deepgram_nova3_au`, `fish_s2
 - `stt_native` turn detection is only valid with an STT that reports end-of-turn itself (Deepgram Flux, Inworld; not Nova-3).
 - `auto` speculative trigger resolves by STT: `livekit_preemptive` for STTs whose LiveKit plugin emits *preflight* transcripts (Deepgram, AssemblyAI, Soniox, Cartesia), `transcript_rules` otherwise (Inworld). See Turn-taking.
 - A preset whose credentials aren't configured is rejected at session start; only the keys a region profile needs are required at startup.
-- **Automatic fallback (LLM and safety):** a request that is rate-limited (HTTP 429), fails (5xx) or produces no first token within its time budget is retried once on the profile's fallback host, within the same turn. Retrying is safe because nothing has been spoken yet. Every fallback is logged with the reason.
+- **Automatic fallback (LLM and safety):** a request that is rate-limited (HTTP 429), fails (5xx) or produces no first token within its time budget is retried once on a fallback host, within the same turn. The fallback is the region profile's first choice for that role that isn't the preset already in use; a role with no such choice has no fallback. Retrying is safe because nothing has been spoken yet. Every fallback is logged with the reason.
 
 **Config-only, not per call:**
 
@@ -351,7 +351,7 @@ The job is idempotent per session id, so a failed run is retried safely.
 
 pgvector stores vectors and finds the nearest ones; it does not create them. The self-hosted embedding model, loaded once in the MCP server, turns text into vectors at write time (extraction job) and at read time (`recall_memory`). One model for all stored vectors; its dimension fixes the column size; each row records which model produced it.
 
-## Actions: reminders
+## Actions: reminders and weather
 
 Bots can set reminders by voice: *"Remind me about my appointment on Thursday."* The MCP server exposes tools to create and list reminders, with policies enforced in code, not left to the prompt:
 
@@ -360,6 +360,12 @@ Bots can set reminders by voice: *"Remind me about my appointment on Thursday."*
 - dates in the past are rejected.
 
 Reminders live in a `reminders` table in Postgres. Due reminders are loaded at call start with the cheat sheet, so a bot brings them up in the next call. Evals check the reminders that exist after a conversation. A reminders list in the frontend comes later; there is no sync to external calendars.
+
+**Weather.** A `get_weather(place, day)` tool answers "what's the weather like in Lisbon tomorrow?" for anywhere in the world. The model has no live data, so without the tool it could only guess; with it, the tool resolves the place name, fetches the forecast and returns a short summary. It has a timeout and a brief cache, and returns "couldn't find that place" or "weather unavailable" rather than nothing, so the bot says so honestly instead of inventing a forecast. The provider is chosen by comparing cost and measured latency; Open-Meteo is the first candidate (free and keyless, but non-commercial only, with attribution required).
+
+**Not offered for now:** web or news search. Search results are untrusted text that needs injection defences and attribution, free tiers are small, and breaking news isn't reliably available in real time.
+
+**Better in the prompt than as tools:** today's date and time in the user's time zone, the user's name and the bots in the call. They're needed on almost every turn, so including them avoids a tool round trip.
 
 ## Database schema (owned by the backend repo)
 
@@ -700,6 +706,7 @@ Roughly half the 3¢ ceiling, with TTS the largest line. The range reflects how 
 - **"Sub-30ms LiveKit edge transit" is a target, not a sourced figure.** LiveKit publishes no number for edge transit; measure it once a test room runs.
 - **On-demand servers add a cold start.** Workers and the MCP server start when the room-setup screen opens; the first visit after an idle period may still wait. Start-up times are measured before the AWS service is chosen.
 - **Privacy review before any launch** (Privacy Act automated-decision-making updates, Digital Duty of Care), by an Australian privacy lawyer. In scope: health information and emotional triggers stored as memories; unlimited retention; deactivated memories kept in the database; and cross-region failover that can send Australian audio to US vendors.
+- **Open-Meteo's free tier is non-commercial only.** It suits this project now; a paid plan or another provider is needed before any commercial use, and its CC BY 4.0 data needs attribution in the app.
 - **Non-verbal cues differ per TTS engine.** The scriptwriter emits one engine-neutral markup, and each TTS preset translates it (for example Orpheus `<sigh>`, Azure speaking styles, inline instructions for Fish and Qwen3-TTS).
 - **STT moved from Inworld to Deepgram's Australian endpoint.** Inworld STT has no Australian endpoint and its API needs a paid plan; Deepgram's `api.au.deepgram.com` runs inference and storage in AWS Sydney at global pricing and serves Nova-3 and Flux. Inworld's acoustic voice profiling is lost; if wanted, it can be rebuilt self-hosted later. Inferring emotion or age from voice is sensitive data for the privacy review. Inworld stays an optional preset.
 - **Deepgram's interim-result cadence from Sydney decides how early a bet can fire,** and must be measured; the stabilization thresholds are validated against it.

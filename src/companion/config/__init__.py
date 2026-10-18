@@ -2,6 +2,7 @@
 
 from companion.config.settings import (
     ConfigurationError,
+    Credential,
     Environment,
     LogFormat,
     LogLevel,
@@ -11,6 +12,7 @@ from companion.config.settings import (
 
 __all__ = [
     "ConfigurationError",
+    "Credential",
     "Environment",
     "LogFormat",
     "LogLevel",
