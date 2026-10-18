@@ -31,7 +31,8 @@ SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version
 | File | What it does |
 |---|---|
 | `20260930065124_create_users_and_accounts.sql` | `users` and `accounts` for Auth.js (custom adapter): lowercase-only emails, `updated_at` trigger, RLS on, API-role grants revoked |
-| `20260930073542_create_bots_sessions_messages.sql` | `bots`, append-only `bot_versions`, `sessions` (with region and the memory-deletion toggle), `session_bots` (with the bot version used), `messages` (16 hash partitions), `user_bot_relationships`; same-user composite references; RLS on everywhere |
+| `20260930073542_create_bots_sessions_messages.sql` | `bots`, append-only `bot_versions`, `sessions` (with region and the memory-deletion toggle), `session_bots` (with the bot version used), `messages` (created with 16 hash partitions; see the next migration), `user_bot_relationships`; same-user composite references; RLS on everywhere |
+| `20261018023000_unpartition_messages.sql` | Replaces the partitioned `messages` with a plain table, copying any rows; same-user reference and rules unchanged ([ADR 0009](../docs/adr/0009-no-partitioning-until-volume-needs-it.md)) |
 
 ## Seed data
 

@@ -12,3 +12,4 @@ One short record per significant decision: the context, what was decided, the op
 | [0006](0006-pgvector-exact-search-per-user.md) | Store memories in Postgres with pgvector and search each user's memories exactly | Accepted |
 | [0007](0007-bots-are-versioned-database-rows.md) | Bot definitions are validated database rows with immutable versions | Accepted, amended by 0008 |
 | [0008](0008-models-per-role-belong-to-the-region-profile.md) | Models per role belong to the region profile; bots have a voice per TTS preset | Accepted |
+| [0009](0009-no-partitioning-until-volume-needs-it.md) | Don't partition tables until volume needs it | Accepted |

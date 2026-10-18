@@ -78,7 +78,7 @@ In development, everything runs on one machine and the agent runtime starts the 
 
 ## Layers
 
-No vendor is fixed for any layer (D22): each is chosen by latency measured from both regions when that layer is built, against the targets above. The "Candidates" column lists what has been measured or found so far.
+No vendor is fixed for any layer (D22): when each layer is built, its candidates are compared on pricing and on latency measured from both regions, against the targets above. The "Candidates" column lists what has been measured or found so far.
 
 | # | Layer | Candidates and current state | Role |
 | --- | --- | --- | --- |
@@ -443,7 +443,7 @@ users ──1:N── accounts                         (login providers)
 
 **Delete rules:** deleting a **user** cascades to everything that belongs to them (accounts, sessions, transcripts, relationships, memories) — the right to be forgotten. **Bots** are never deleted while anything refers to them (`ON DELETE RESTRICT`); they're retired with `is_active = false`. Deleting a **session** cascades to its bot list and transcript, but a memory learned in it survives (`session_id` becomes null).
 
-**Same-user guarantee:** tables partitioned by `user_id` reference their parent with `(user_id, id)` pairs rather than `id` alone (e.g. `messages (user_id, session_id) → sessions (user_id, id)`), so the database itself guarantees a transcript line or memory can't be attached to another user's session or memory.
+**Same-user guarantee:** user-owned tables reference their parent with `(user_id, id)` pairs rather than `id` alone (e.g. `messages (user_id, session_id) → sessions (user_id, id)`), so the database itself guarantees a transcript line or memory can't be attached to another user's session or memory.
 
 ### Calls, bots and transcripts (migration `20260930073542`)
 
@@ -453,7 +453,7 @@ The authoritative definitions are in the migration file; summary:
 - **`bot_versions`** — append-only: what each bot says and how it behaves ([ADR 0007](docs/adr/0007-bots-are-versioned-database-rows.md), [ADR 0008](docs/adr/0008-models-per-role-belong-to-the-region-profile.md)). `bot_id`, `version` (1, 2, …, unique per bot), `persona_prompt` (personality text the scriptwriter reads), `voices` (a voice ID per TTS preset), `allowed_tools`, `memory_policy` and `safety_rules` (settings objects; missing keys take the model's defaults). A trigger rejects any update or delete, so editing a bot means inserting its next version; the backend always uses each bot's latest version, and a release will pin version IDs. Every row is validated against `BotDefinition` (`src/companion/contracts/`) when loaded.
 - **`sessions`** — one row per call: `user_id → users`, `livekit_room_name`, `region` (`au` / `us`), `memory_deletion_enabled` (the user's room-setup toggle, off by default), `status` (`active` / `ended` / `failed`, kept consistent with `ended_at`), `end_reason`, one column per chosen preset (`stt_preset`, `tts_preset`, `llm_preset`, `safety_preset`, `turn_detector_preset`, `trigger_preset`), `started_at`, `ended_at`.
 - **`session_bots`** — junction table: which bots took part in each call, and the exact version of each (`session_id`, `bot_id`, `bot_version_id`; a composite reference guarantees the version belongs to that bot). The source of truth for "who was in the room", copied into `memory_witnesses` by the post-call job.
-- **`messages`** — the transcript, one row per spoken line: `session_id`, `seq` (order within the call), `speaker` (`user` / `bot`), `bot_id` (set exactly when a bot spoke), `text` (what was actually **heard**), `interrupted` (bot lines only), `spoken_at`. Hash-partitioned by `user_id` into 16 partitions.
+- **`messages`** — the transcript, one row per spoken line: `session_id`, `seq` (order within the call), `speaker` (`user` / `bot`), `bot_id` (set exactly when a bot spoke), `text` (what was actually **heard**), `interrupted` (bot lines only), `spoken_at`. A plain table; partitioning is deferred until volume needs it ([ADR 0009](docs/adr/0009-no-partitioning-until-volume-needs-it.md)), and migration `20261018023000` removed the original 16 hash partitions.
 - **`user_bot_relationships`** — one row per (user, bot) pair that has talked: `first_met_at`, `last_call_at`, `call_count`, `rapport_level` (1 = just met … 10 = close friend) and `rapport_notes` (short summary), both maintained by the post-call job. The scriptwriter reads it so each bot treats the user as a new acquaintance or an old friend as appropriate.
 
 **Frontend note:** the room-setup screen reads `bots` (active only) server-side with the service-role key; the browser roles have no access (RLS).
@@ -469,7 +469,7 @@ CREATE TYPE memory_type AS ENUM ('core_fact', 'session_summary');
 CREATE TYPE memory_kind AS ENUM ('fact', 'preference', 'event');  -- core facts only
 
 CREATE TABLE memories (
-    id              uuid        NOT NULL DEFAULT gen_random_uuid(),
+    id              uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     session_id      uuid,                              -- call it came from (→ sessions, see below)
     type            memory_type NOT NULL,
@@ -483,9 +483,9 @@ CREATE TABLE memories (
     occurred_at     timestamptz,                       -- when the event happened, not when stored
     created_at      timestamptz NOT NULL DEFAULT now(),
     superseded_by   uuid,                              -- set when a later fact replaces this one (→ memories, see below)
-    PRIMARY KEY (user_id, id),                         -- partition key must be part of the PK
+    UNIQUE (user_id, id),                              -- target of same-user references; also narrows search to one user
     CHECK (type <> 'core_fact' OR embedding IS NOT NULL)
-) PARTITION BY HASH (user_id);
+);
 
 -- Which bots were present when a memory was said (the sharing rule).
 -- A join table rather than an array column so bot_id can be a real foreign key.
@@ -509,11 +509,10 @@ LIMIT 5;
 
 Further references in the final migration: `(user_id, session_id) → sessions (user_id, id)` with `ON DELETE SET NULL (session_id)` so a memory outlives its call, and `(user_id, superseded_by) → memories (user_id, id)` so a fact can only be replaced by the same user's fact. Transcripts are in `messages` (above). **Retention is unlimited for now** (D13), and forgetting a memory deactivates it rather than deleting the row; both are flagged for the privacy review.
 
-The `reminders` table (user, the bot that set it, text, due time with the user's time zone, status, the session it came from) is designed with its migration in plan step S20.1, following the same rules: partitioned or keyed by user, same-user composite references, RLS on with no policies.
+The `reminders` table (user, the bot that set it, text, due time with the user's time zone, status, the session it came from) is designed with its migration in plan step S20.1, following the same rules: keyed by user, same-user composite references, RLS on with no policies.
 
 **Indexing and performance decisions:**
-- **Exact vector search per user, no HNSW (for now).** pgvector applies `WHERE` filters *after* an HNSW index scan (default `hnsw.ef_search` = 40 candidates), so an HNSW index shared by many users would, for one user, return few or no rows. A single user's history is thousands of rows, not millions, so the primary key's `user_id` prefix narrows to that user's rows and Postgres computes exact distances on them — 100% recall, expected low-single-digit ms (to be benchmarked). HNSW (with pgvector ≥0.8 iterative scans) is only worth revisiting if individual histories grow very large.
-- **Hash partitioning by `user_id`** — for maintenance (smaller per-partition indexes, faster vacuum) and cache locality, not for vector-search correctness. Cheap to set up now, expensive to retrofit onto a large live table. Partition count TBD.
+- **Exact vector search per user, no HNSW (for now).** pgvector applies `WHERE` filters *after* an HNSW index scan (default `hnsw.ef_search` = 40 candidates), so an HNSW index shared by many users would, for one user, return few or no rows. A single user's history is thousands of rows, not millions, so the `(user_id, id)` index narrows the search to that user's rows and Postgres computes exact distances on them — 100% recall, expected low-single-digit ms (to be benchmarked). HNSW (with pgvector ≥0.8 iterative scans) is only worth revisiting if individual histories grow very large.
 - **`halfvec`** — half-precision storage halves table and index size with negligible recall loss.
 - **Connection path: Supabase's transaction pooler (Supavisor, port 6543) plus a small client-side pool held open by the agent.** The client-side pool means no lookup pays connection setup; the pooler lets thousands of calls share a small number of real database connections. Direct or session connections don't scale here: Postgres has a hard connection limit, and LiveKit runs each call in its own process, so per-call connections would exhaust it. Transaction pooling can't support prepared statements, so they're disabled in the driver; no session-level Postgres features are needed (anything that must be set is set within a single transaction).
 

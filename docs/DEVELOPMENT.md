@@ -25,7 +25,8 @@ Things about this repo's environment that the code and other docs don't make obv
 
 ## Migrations
 
-- **Applied by hand, never by tooling.** Each file is pasted into the Supabase SQL editor, in filename order. Never point `supabase/ci/apply_migrations.sh` or any script at the real database.
+- **Applied deliberately, never automatically.** Each file is run against the real database one at a time, in filename order, by the maintainer in the Supabase SQL editor or at the maintainer's explicit request. Never point `supabase/ci/apply_migrations.sh` at the real database, and never apply migrations from CI.
+- **Applied so far:** `20260930065124`, `20260930073542` and `seed.sql` (2026-10-18). Not yet applied: `20261018023000`.
 - **Each file is one transaction** (`BEGIN; … COMMIT;`) and records itself in `supabase_migrations.schema_migrations`, so the Supabase CLI would recognise it if adopted later.
 - **Never edit a migration once it has been applied** to the real database; write a new one.
 - **The CI bootstrap mimics Supabase's defaults.** `supabase/ci/bootstrap.sql` creates `anon`, `authenticated` and `service_role` and grants them access to new tables, so the migrations' `REVOKE` statements are actually tested. A new table, or partition, without `REVOKE` and `ENABLE ROW LEVEL SECURITY` fails CI.

@@ -193,17 +193,20 @@ BEGIN
 
     -- A message can't be attached to another user's session.
     BEGIN
+        -- An unused position, so only the same-user reference can reject it.
         INSERT INTO public.messages (user_id, session_id, seq, speaker, text)
-        VALUES (bob, call_id, 0, 'user', 'Wrong user');
+        VALUES (bob, call_id, 99, 'user', 'Wrong user');
         RAISE EXCEPTION 'check failed: a message was attached to another user''s session';
     EXCEPTION WHEN foreign_key_violation THEN NULL;
     END;
 
-    -- messages is split into 16 partitions.
+    -- messages is a plain table, with no partitions left behind (ADR 0009).
     SELECT count(*) INTO partition_count FROM pg_inherits
     WHERE inhparent = 'public.messages'::regclass;
-    IF partition_count <> 16 THEN
-        RAISE EXCEPTION 'check failed: messages has % partitions, expected 16', partition_count;
+    IF partition_count <> 0
+       OR (SELECT relkind FROM pg_class WHERE oid = 'public.messages'::regclass) <> 'r'
+       OR EXISTS (SELECT 1 FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'messages\_p%') THEN
+        RAISE EXCEPTION 'check failed: messages should be a plain, unpartitioned table';
     END IF;
 
     -- Relationship rapport stays within 1-10.
@@ -256,7 +259,7 @@ BEGIN
 
     -- Every migration file recorded itself.
     IF (SELECT count(*) FROM supabase_migrations.schema_migrations
-        WHERE version IN ('20260930065124', '20260930073542')) <> 2 THEN
+        WHERE version IN ('20260930065124', '20260930073542', '20261018023000')) <> 3 THEN
         RAISE EXCEPTION 'check failed: not every migration recorded itself';
     END IF;
 END;

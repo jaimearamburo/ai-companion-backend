@@ -17,7 +17,7 @@ Prepared 2026-10-17 against commit `08d6ddf`; approved 2026-10-18.
 5. **Small, shippable steps.** Each step is one reviewable batch, ends with lint, types, tests and (from step 5) evals passing, and updates the checklist's evidence lines. Large steps are split into numbered batches.
 6. **Verify vendors before building on them.** Every library or provider API is checked against current official docs at the step that uses it; section 2 records what was checked today.
 7. **Pay only for live-call latency.** Paid services are considered only for the live-call layers: transport, worker compute, speech to text, turn detection, the scriptwriter and safety LLMs, and text to speech. Everything else lives in Sydney on free or self-hosted options where possible: the MCP server and memory lookups (a filler masks their latency), the database and vector search, the cache, embeddings, post-call extraction, evals, tracing and CI. Nothing runs around the clock unless it must: servers start on demand and scale to zero when no calls are active (D27, D35).
-8. **Vendors are chosen per layer, by measurement, when that layer is built.** No vendor is fixed yet for any layer, because none has yet reached its latency target in testing. Each layer's step measures the candidates from both regions and picks the one that meets the target, preferring vendors with in-region inference in Australia and the US. Names in this plan are candidates, not commitments.
+8. **Vendors are chosen per layer, by measurement, when that layer is built.** No vendor is fixed yet for any layer, because none has yet reached its latency target in testing. Each layer's step compares the candidates' pricing, measures their latency from both regions, and picks the one that meets the target at the best cost, preferring vendors with in-region inference in Australia and the US. Names in this plan are candidates, not commitments.
 
 ### How the pieces fit
 
@@ -31,7 +31,7 @@ Most of this plan is new code, because almost nothing behaviour-deciding exists 
 |---|---|---|
 | `config/settings.py` | Vendor keys become optional per region profile instead of all required; region profiles added | S2 |
 | `observability/logging_setup.py` | Trace IDs added to every log line; otherwise unchanged | S10 |
-| Migrations 1 and 2 | Not yet applied to the real database (confirmed 2026-10-18), so S1 edits migration 2 in place for the new bot fields, `bot_versions` and session region. Memories and reminders get new migrations (S6, S20). Nothing is applied until S1 is done | S1, S6, S20 |
+| Migrations 1 and 2 | Edited in S1.2, then applied to the real database with the seed on 2026-10-18; from now on they are frozen, and every schema change is a new migration: `20261018023000` removes `messages` partitioning (S1.3), then memories (S6) and reminders (S20) | S1, S6, S20 |
 | `supabase/ci/` checks | Extended for each new migration | S1, S6, S20 |
 | Module stubs under `src/companion/` (README only) | Reorganised into the new layout: `agent/`, `voice/`, `tools_server/`, `memory/`, `safety/`, `evals/` | S0–S3 |
 | `experiments/latency_probe/` | Extended to run from AWS in both regions with more candidates | S2 |
@@ -47,7 +47,7 @@ Numbers are stable references used throughout this plan. Status as of 2026-10-18
 
 ### 3.1 Decided
 
-Decision records in [docs/adr/](docs/adr/): D1 in 0007 and D40 in 0008; D3, D4 and D33 in 0005; D5 and D6 in 0006; D7, D14 and D29 (safety) in 0004; D12, D21, D27 and D35 in 0003; D22, D24 and D25 in 0002.
+Decision records in [docs/adr/](docs/adr/): D1 in 0007, D40 in 0008 and D41 in 0009; D3, D4 and D33 in 0005; D5 and D6 in 0006; D7, D14 and D29 (safety) in 0004; D12, D21, D27 and D35 in 0003; D22, D24 and D25 in 0002.
 
 | # | Decision | Date |
 |---|---|---|
@@ -69,7 +69,7 @@ Decision records in [docs/adr/](docs/adr/): D1 in 0007 and D40 in 0008; D3, D4 a
 | D19 | Each batch ends with a suggested commit message; a commit is made only after the maintainer approves that specific commit, and nothing is pushed unless asked. | 2026-10-18 |
 | D20 | The extraction job is started from a queue in the Sydney Redis, so a failed run retries. | 2026-10-18 |
 | D21 | Paid services only for live-call layers (transport, worker compute, STT, turn detection, scriptwriter and safety LLMs, TTS). Everything else in Sydney on free or self-hosted options where possible. | 2026-10-17 |
-| D22 | No vendor is fixed for any layer. Each is chosen by measured latency when its layer is built, preferring in-region inference in Australia and the US. | 2026-10-17 |
+| D22 | No vendor is fixed for any layer. When each layer is built, its candidates are compared on pricing and on latency measured from both regions, and the choice is recorded in an ADR; in-region inference in Australia and the US is preferred. | 2026-10-18 |
 | D24 | Latency targets, measured from each region: first audible sound (filler) within 300ms of turn commit at p50 and 500ms at p95; first word of the real reply within 1.0s at p50 and 1.2s at p95. | 2026-10-18 |
 | D26 | A failing live-call vendor may fall back to its equivalent in the other region; every fallback is logged. Flagged for the privacy review. | 2026-10-18 |
 | D27 | Services run on demand; nothing runs 24/7 unless it must. | 2026-10-18 |
@@ -88,6 +88,7 @@ Decision records in [docs/adr/](docs/adr/): D1 in 0007 and D40 in 0008; D3, D4 a
 | D38 | The user switches memory deletion on or off on the room-setup screen before the call; it defaults to off. | 2026-10-18 |
 | D39 | Code comments explain why, not what the language does. Language and library explanations for the maintainer go in private learning notes and in chat, never in committed code. Existing tutorial-style comments are tidied in S0. | 2026-10-18 |
 | D40 | Bots carry a voice per TTS preset, not a model per role; models per role belong to the region profile, because one scriptwriter request voices every bot in the call. | 2026-10-18 |
+| D41 | No table partitioning until volume needs it; `messages` becomes a plain table (S1.3) and memories are designed unpartitioned. Same-user composite references stay. Trigger and path in ADR 0009. | 2026-10-18 |
 
 ### 3.2 Open
 
@@ -122,6 +123,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - **IDs:** AR-01, AR-08, MT-02 (model)
 - **Work:** Strict Pydantic v2 models for bot definitions (persona, a voice per TTS preset, memory policy, allowed tools, safety settings), dispatch metadata (now with `region`), script output (speaker segments and tags), memory records, tool inputs and outputs, safety verdicts and eval scenarios. A migration adding the missing bot fields and an immutable `bot_versions` table. A loader that validates every bot row and fails loudly on an invalid one.
 - **Done when:** adding a bot needs only a new validated row; tests feed malformed payloads at every boundary, including a bad bot row; at session start, a regular user's call with more than two bots is rejected (admins have no limit).
+- **Batches:** S1.1 typed models; S1.2 bot schema and session-start checks; S1.3 plain `messages` table (D41).
 - **Effort:** M. **Frontend:** regenerate Supabase types.
 
 ### S2 — Provider interfaces, region profiles and a resilient client
@@ -233,7 +235,7 @@ Effort is relative size: **S** small, **M** medium, **L** large; a large step is
 - **Work:** Docker Compose (worker, MCP server, Redis, Postgres with pgvector) and `make demo` (text mode needs only an LLM key). A README that leads with a short demo video, an architecture diagram, eval and latency tables, how to run it, and honest limitations. A short write-up on how reliability and recall were measured.
 - **Effort:** M.
 
-**Total:** 38 tickets. At two to four batches reviewed a day, that is roughly two to four weeks. Work that cannot be compressed sits alongside it and may set the real pace:
+**Total:** 39 tickets. At two to four batches reviewed a day, that is roughly two to four weeks. Work that cannot be compressed sits alongside it and may set the real pace:
 
 - the open decisions in section 3.2, the real bot roster, the fixed safety wording and the voice listening test;
 - hand-labelling 20–30 conversations for the judge (S16);
